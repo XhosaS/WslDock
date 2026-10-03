@@ -1,0 +1,25 @@
+# Build tools and generated output
+.tools/
+artifacts/
+**/bin/
+**/obj/
+installer/output/
+
+# Editors and local state
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]
+.env
+.env.*
+
+# Local agent state
+.codex/
+.agents/

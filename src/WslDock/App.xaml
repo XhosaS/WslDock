@@ -1,0 +1,77 @@
+<Application x:Class="WslDock.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" ShutdownMode="OnExplicitShutdown">
+ <Application.Resources>
+  <Style TargetType="Window"><Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="14"/><Setter Property="Foreground" Value="{DynamicResource Color1C1C1C}"/><Setter Property="Background" Value="{DynamicResource ColorF3F3F3}"/><Setter Property="UseLayoutRounding" Value="True"/></Style>
+  <Style TargetType="Button">
+   <Setter Property="Padding" Value="13,7"/><Setter Property="Background" Value="{DynamicResource ColorFBFBFB}"/><Setter Property="BorderBrush" Value="{DynamicResource ColorDDDDDD}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="Cursor" Value="Hand"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="{DynamicResource ColorFFFFFF}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Frame" Property="Background" Value="{DynamicResource ColorE8E8E8}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource Color0067C0}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Padding" Value="7"/></Style>
+  <Style TargetType="TextBox"><Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="CaretBrush" Value="{DynamicResource Color242424}"/><Setter Property="Padding" Value="10,7"/><Setter Property="Background" Value="{DynamicResource ColorFEFEFE}"/><Setter Property="BorderBrush" Value="{DynamicResource ColorD6D6D6}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+  <Style TargetType="ComboBox"><Setter Property="Foreground" Value="{DynamicResource Color242424}"/>
+   <Setter Property="Padding" Value="10,7"/><Setter Property="MinHeight" Value="34"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+    <Grid>
+     <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" ClickMode="Press">
+      <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="DropBorder" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource ColorD5D5D5}" Background="{DynamicResource ColorFBFBFB}"><Grid><ContentPresenter/><TextBlock Text="&#xE70D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource Color242424}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="DropBorder" Property="Background" Value="{DynamicResource ColorFFFFFF}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
+     </ToggleButton>
+     <ContentPresenter Margin="10,6,32,6" VerticalAlignment="Center" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+     <Popup Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+      <Border Background="{DynamicResource ColorFCFCFC}" BorderBrush="{DynamicResource ColorDADADA}" BorderThickness="1" CornerRadius="5" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"><ScrollViewer MaxHeight="300" CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer></Border>
+     </Popup>
+    </Grid>
+    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="ComboBoxItem"><Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="Padding" Value="10,7"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border Name="ItemBorder" CornerRadius="3" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ColorEAEAEA}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ColorE6EFF7}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <Style x:Key="Toggle" TargetType="CheckBox">
+   <Setter Property="Cursor" Value="Hand"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><Grid Width="40" Height="20"><Border x:Name="Track" CornerRadius="10" BorderBrush="{DynamicResource Color777777}" BorderThickness="1" Background="Transparent"/><Ellipse x:Name="Thumb" Width="12" Height="12" Fill="{DynamicResource Color666666}" HorizontalAlignment="Left" Margin="4,0"/></Grid><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource Color0067C0}"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Color0067C0}"/><Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource OnAccentBrush}"/><Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource Color242424}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="ToolTip"><Setter Property="Background" Value="{DynamicResource ColorFCFCFC}"/><Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="BorderBrush" Value="{DynamicResource ColorDADADA}"/></Style>
+  <!-- Draw the entire flyout, including the icon column, with the shared theme. -->
+  <Style TargetType="ContextMenu">
+   <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="14"/>
+   <Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="Background" Value="{DynamicResource ColorFCFCFC}"/>
+   <Setter Property="BorderBrush" Value="{DynamicResource ColorDADADA}"/><Setter Property="BorderThickness" Value="1"/>
+   <Setter Property="Padding" Value="4"/><Setter Property="MinWidth" Value="180"/><Setter Property="UseLayoutRounding" Value="True"/>
+   <Setter Property="OverridesDefaultStyle" Value="True"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
+    <Border Margin="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+     <Border.Effect><DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.18" Color="Black"/></Border.Effect>
+     <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" KeyboardNavigation.TabNavigation="Cycle"/>
+    </Border>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="MenuItem">
+   <Setter Property="Foreground" Value="{DynamicResource Color242424}"/><Setter Property="Background" Value="Transparent"/>
+   <Setter Property="Padding" Value="10,7"/><Setter Property="MinHeight" Value="34"/><Setter Property="Margin" Value="0,1"/>
+   <Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="OverridesDefaultStyle" Value="True"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
+    <Border x:Name="ItemFrame" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <ContentPresenter x:Name="MenuIcon" ContentSource="Icon" Width="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+      <ContentPresenter ContentSource="Header" Grid.Column="1" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+     </Grid>
+    </Border>
+    <ControlTemplate.Triggers>
+     <Trigger Property="Icon" Value="{x:Null}"><Setter TargetName="MenuIcon" Property="Visibility" Value="Collapsed"/></Trigger>
+     <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemFrame" Property="Background" Value="{DynamicResource ColorEAEAEA}"/></Trigger>
+     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+    </ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key="MenuSeparator" TargetType="Separator">
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Margin="10,5" Background="{DynamicResource ColorE2E2E2}"/></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="ScrollBar">
+   <Setter Property="Width" Value="12"/><Setter Property="Background" Value="Transparent"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+    <Grid Background="Transparent"><Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical">
+     <Track.DecreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Opacity="0"/></Track.DecreaseRepeatButton>
+     <Track.Thumb><Thumb Margin="4,2" Background="{DynamicResource Color888888}"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{TemplateBinding Background}" CornerRadius="2"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+     <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Opacity="0"/></Track.IncreaseRepeatButton>
+    </Track></Grid>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+ </Application.Resources>
+</Application>
