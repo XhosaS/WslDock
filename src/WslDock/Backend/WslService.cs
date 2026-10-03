@@ -39,6 +39,34 @@ public sealed class WslService
         return doc.RootElement.Clone();
     }, background);
 
+    // WSLg resolves SVG/theme icons that the dependency-free Linux bridge cannot
+    // decode. Reuse its local ICO and persist PNG pixels for the Dock/settings UI.
+    // This migration is entirely local and must never start a stopped distro.
+    public static bool TryFillCachedIcon(DockApp app)
+    {
+        if (app.IconPng.Length > 0 || app.Distro.Length == 0 || app.DesktopId.Length == 0) return false;
+        if (app.Distro.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return false;
+        var desktopId = Path.GetFileNameWithoutExtension(app.DesktopId);
+        var folder = Path.Combine(Path.GetTempPath(), "WSLDVCPlugin", app.Distro);
+        foreach (var id in new[] { desktopId, desktopId.Split('.').Last() }.Distinct())
+        {
+            if (id.Length == 0 || id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) continue;
+            try
+            {
+                using var source = File.OpenRead(Path.Combine(folder, id + ".ico"));
+                var decoder = new IconBitmapDecoder(source, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).First();
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(frame);
+                using var output = new MemoryStream(); encoder.Save(output);
+                app.IconPng = Convert.ToBase64String(output.ToArray());
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException or System.Runtime.InteropServices.COMException)
+            { /* Missing/corrupt cache: keep the existing placeholder and try another ID. */ }
+        }
+        return false;
+    }
+
     public async Task<List<DockApp>> DiscoverAsync(string distro)
     {
         var result = await RequestAsync(distro, new { action = "discover" });
@@ -46,6 +74,7 @@ public sealed class WslService
         foreach (var a in apps)
         {
             a.Distro = distro;
+            TryFillCachedIcon(a);
             if (a.IconPng.Length == 0) continue;
             try
             {

@@ -17,7 +17,7 @@ public static class Diagnostics
             report["displayHealth"] = health;
             var discovered = new List<DockApp>();
             foreach (var distro in distros) discovered.AddRange(await wsl.DiscoverAsync(distro));
-            report["apps"] = discovered.Select(a => new { a.Name, a.Distro, a.DesktopId, a.Command, a.ScaleProfile });
+            report["apps"] = discovered.Select(a => new { a.Name, a.Distro, a.DesktopId, a.Command, a.ScaleProfile, iconPngBytes = a.IconPng.Length });
             foreach (var distro in distros)
             {
                 var status = await wsl.RequestAsync(distro, new { action = "status", ids = Array.Empty<string>() });

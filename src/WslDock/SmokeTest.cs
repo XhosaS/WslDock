@@ -72,6 +72,16 @@ public static class SmokeTest
             var wsl = new WslService(); var distros = await wsl.DistrosAsync(); checks["distros"] = distros;
             var apps = await wsl.DiscoverAsync(distros.First());
             foreach (var a in apps) a.Visible = a.Name == "Codex" || a.Name.Contains("Chrome") || a.ScaleProfile == "alacritty";
+            var nautilus = apps.FirstOrDefault(a => a.DesktopId == "org.gnome.Nautilus.desktop");
+            if (nautilus != null)
+            {
+                checks["nautilusDockImageLoaded"] = Ui.Icon(nautilus) is Image { Source: BitmapSource };
+                var old = new DockApp { Distro = nautilus.Distro, DesktopId = nautilus.DesktopId };
+                checks["nautilusEmptyCacheMigrated"] = WslService.TryFillCachedIcon(old) && Ui.Icon(old) is Image { Source: BitmapSource };
+                var original = old.IconPng;
+                checks["existingIconPreserved"] = !WslService.TryFillCachedIcon(old) && old.IconPng == original;
+                nautilus.Visible = true;
+            }
             foreach (var distro in distros)
             {
                 var identities = await wsl.RequestAsync(distro, new { action = "status", ids = Array.Empty<string>() });

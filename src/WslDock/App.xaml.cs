@@ -42,6 +42,9 @@ public partial class App : System.Windows.Application
             args.Handled = true;
         };
         Prefs = Config.Load();
+        var iconsUpdated = false;
+        foreach (var app in Prefs.Apps) iconsUpdated |= WslService.TryFillCachedIcon(app);
+        if (iconsUpdated) Config.Save(Prefs);
         Theme.Apply(Prefs.ThemeMode);
         SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         SystemEvents.DisplaySettingsChanged += SystemDisplayChanged;
