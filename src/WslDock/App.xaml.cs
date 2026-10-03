@@ -114,12 +114,26 @@ public partial class App : System.Windows.Application
         tray.Icon = next; trayIcon = next; trayAppearance = appearance;
         previous?.Dispose();
     }
+    public async Task ShutdownWslAsync()
+    {
+        if (Wsl.IsShuttingDown) return;
+        AppMenus.Close();
+        if (MessageBox.Show("这会停止所有 WSL 发行版和 Linux 应用。请先保存工作。\n\n是否关闭 WSL？", "关闭 WSL",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        try
+        {
+            Dock.ShowStatus("正在关闭 WSL…");
+            await Wsl.ShutdownAsync();
+            Dock.ClearWslState(); Dock.ShowStatus("WSL 已关闭。点击应用图标可以重新启动。");
+        }
+        catch (Exception ex) { Config.Log(ex.ToString()); Dock.ShowStatus("关闭 WSL 失败"); MessageBox.Show(ex.Message, "关闭 WSL 失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     public void OpenDisplaySettings() { OpenSettings(); settings!.ShowDisplayPage(); }
     protected override void OnExit(ExitEventArgs e)
     {
         SystemEvents.UserPreferenceChanged -= SystemThemeChanged;
         SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;
-        AppMenus.Close(); tray?.Dispose(); trayIcon?.Dispose(); instance?.Dispose();
+        Native.RestoreWslgIcons(); AppMenus.Close(); tray?.Dispose(); trayIcon?.Dispose(); instance?.Dispose();
         base.OnExit(e);
     }
 }

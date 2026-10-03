@@ -9,6 +9,12 @@ namespace WslDock;
 public sealed class WslService
 {
     private readonly string script;
+    private readonly WslRequestGate requests = new();
+    public bool IsShuttingDown => requests.IsShuttingDown;
+    public bool BackgroundPaused => requests.BackgroundPaused;
+    public Task ShutdownAsync() => requests.ShutdownAsync(async () =>
+        await RunAsync(new[] { "--shutdown" }, null, Encoding.Unicode));
+
     public WslService()
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("WslDock.Backend.wsl_bridge.py")!;
@@ -25,13 +31,13 @@ public sealed class WslService
             .Select(s => s.Trim()).Where(s => s.Length > 0 && (includeSystem || !s.StartsWith("docker-desktop", StringComparison.OrdinalIgnoreCase))).ToList();
     }
 
-    public async Task<JsonElement> RequestAsync(string distro, object request)
+    public Task<JsonElement> RequestAsync(string distro, object request, bool background = false) => requests.RunAsync(async () =>
     {
         var text = await RunAsync(new[] { "-d", distro, "--", "python3", "-c", script }, JsonSerializer.Serialize(request, Config.Json), Encoding.UTF8);
         using var doc = JsonDocument.Parse(text);
         if (doc.RootElement.TryGetProperty("error", out var error)) throw new InvalidOperationException(error.GetString());
         return doc.RootElement.Clone();
-    }
+    }, background);
 
     public async Task<List<DockApp>> DiscoverAsync(string distro)
     {
@@ -53,9 +59,9 @@ public sealed class WslService
         return apps;
     }
 
-    public async Task<DisplayHealth> DisplayHealthAsync(string distro)
+    public async Task<DisplayHealth> DisplayHealthAsync(string distro, bool background = false)
     {
-        var result = await RequestAsync(distro, new { action = "display_health" });
+        var result = await RequestAsync(distro, new { action = "display_health" }, background);
         var health = result.Deserialize<DisplayHealth>(Config.Json) ?? new();
         if (Native.Windows().Any(w => w.Distro == distro && w.Title.Contains("[WARN:COPY MODE]")))
             return new DisplayHealth { State = "broken", Message = "WSLg 已进入 COPY MODE，窗口画面可能不可用。", Detail = health.Detail };

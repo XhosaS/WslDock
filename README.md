@@ -9,12 +9,12 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 
 ## 下载与安装
 
-当前版本：**v0.3.0**。
+当前版本：**v0.3.1**。
 
 | 下载 | 使用方式 |
 | --- | --- |
-| [WslDock-Setup-v0.3.0.exe](https://github.com/XhosaS/WslDock/releases/download/v0.3.0/WslDock-Setup-v0.3.0.exe) | 推荐。安装到当前用户目录，创建开始菜单入口，可选桌面快捷方式；无需管理员权限。 |
-| [WslDock-0.3.0-win-x64.zip](https://github.com/XhosaS/WslDock/releases/download/v0.3.0/WslDock-0.3.0-win-x64.zip) | 解压整个文件夹，双击 `WslDock.exe` 即可使用。请勿只移动 EXE。 |
+| [WslDock-Setup-v0.3.1.exe](https://github.com/XhosaS/WslDock/releases/download/v0.3.1/WslDock-Setup-v0.3.1.exe) | 推荐。安装到当前用户目录，创建开始菜单入口，可选桌面快捷方式；无需管理员权限。 |
+| [WslDock-0.3.1-win-x64.zip](https://github.com/XhosaS/WslDock/releases/download/v0.3.1/WslDock-0.3.1-win-x64.zip) | 解压整个文件夹，双击 `WslDock.exe` 即可使用。请勿只移动 EXE。 |
 
 两个包均包含 .NET 运行时，无需另装 .NET。Release 中的 Source code ZIP / TAR.GZ 是源码，供开发者使用。当前安装包尚未进行代码签名。
 
@@ -22,7 +22,7 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 
 ## 界面预览
 
-以下是 v0.3.0 实际运行截图，通过 Computer Use 截取。
+以下是 v0.3.1 实际运行截图，通过 Computer Use 截取。
 
 **配置应用**：选择发行版、发现应用、控制图标显示和登录自启。
 
@@ -40,7 +40,7 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 4. 拖动左侧短竖条调整 Dock 位置；竖条上方的小点表示是否有 WSL 发行版正在运行。
 5. 在“显示设置”选择跟随系统、浅色或深色主题，并调整应用缩放。
 
-Dock 位于 **Windows 桌面层**，普通窗口可以遮住它，不占任务栏或 Alt+Tab；回到桌面即可使用。右键左侧拖动条或系统托盘图标可以打开菜单，双击托盘图标可重新显示 Dock。
+Dock 位于 **Windows 桌面层**，普通窗口可以遮住它，不占任务栏或 Alt+Tab；回到桌面即可使用。右键左侧拖动条或系统托盘图标可以打开菜单，双击托盘图标可重新显示 Dock。托盘菜单新增“关闭 WSL”，确认后执行 `wsl --shutdown`，停止所有发行版与 Linux 应用；请先保存工作。关闭后后台查询暂停，点击应用图标可重新启动。
 
 重复启动会复用已有实例；设置窗口也只保留一份。关闭设置窗口后 Dock 继续运行，退出请使用托盘或拖动条菜单中的“退出 WslDock”。隐藏图标或退出 WslDock 都不会关闭 Linux 应用。
 
@@ -52,6 +52,8 @@ Dock 位于 **Windows 桌面层**，普通窗口可以遮住它，不占任务�
 - “配置应用”顶部可开启登录自启，默认关闭。移动免安装版目录后，请重新关闭再开启此选项以更新路径。
 
 ## 常见问题
+
+**Nautilus 任务栏图标空白或显示企鹅？** v0.3.1 在 WslDock 运行时为 WSLg 名称匹配失败的窗口补图标；使用当前会话日志与窗口编号精确识别，无需改动 Linux 全局配置。日志不可用或身份不明确时不会修改窗口。
 
 **没有发现应用？** 确认发行版已安装 Python 3，应用有 `.desktop` 启动入口，然后选择正确的发行版重新发现。首次发现和启动应用可能唤起发行版，状态灯查询不会主动启动它。
 

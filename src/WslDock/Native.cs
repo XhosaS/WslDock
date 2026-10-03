@@ -5,12 +5,13 @@ using System.Windows.Interop;
 
 namespace WslDock;
 
-public sealed record AppWindow(nint Handle, uint ProcessId, string Title, string AppId, string DisplayName, string IconPath, string Relaunch, bool Minimized)
+public sealed record AppWindow(nint Handle, uint ProcessId, string Title, string AppId, string DisplayName, string IconPath, string Relaunch, bool Minimized, ulong ServerWindowId = 0, string LinuxAppId = "", string DistroName = "")
 {
     public string Distro
     {
         get
         {
+            if (DistroName.Length > 0) return DistroName;
             const string marker = "\\WSLDVCPlugin\\";
             var index = IconPath.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
             return index < 0 ? "" : IconPath[(index + marker.Length)..].Split('\\')[0];
@@ -18,7 +19,7 @@ public sealed record AppWindow(nint Handle, uint ProcessId, string Title, string
     }
 }
 
-public static class Native
+public static partial class Native
 {
     private delegate bool EnumProc(nint hwnd, nint param);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, nint param);
@@ -83,10 +84,12 @@ public static class Native
                 var icon = ReadProperty(store, 3);
                 var relaunch = ReadProperty(store, 2);
                 // Ordinary Remote Desktop windows must never be managed by this dock.
-                if (!icon.Contains("\\WSLDVCPlugin\\", StringComparison.OrdinalIgnoreCase) || !relaunch.Contains("wslg.exe", StringComparison.OrdinalIgnoreCase)) return true;
+                var serverId = unchecked((ulong)GetProp(hwnd, "WslgServerWindowId").ToInt64());
+                var identity = FindWslgIdentity(serverId);
+                if ((!icon.Contains("\\WSLDVCPlugin\\", StringComparison.OrdinalIgnoreCase) || !relaunch.Contains("wslg.exe", StringComparison.OrdinalIgnoreCase)) && identity == null) return true;
                 var title = new StringBuilder(2048);
                 GetWindowText(hwnd, title, title.Capacity);
-                result.Add(new(hwnd, pid, title.ToString(), ReadProperty(store, 5), ReadProperty(store, 4), icon, relaunch, IsIconic(hwnd)));
+                result.Add(new(hwnd, pid, title.ToString(), ReadProperty(store, 5), ReadProperty(store, 4), icon, relaunch, IsIconic(hwnd), serverId, identity?.AppId ?? "", identity?.Distro ?? ""));
             }
             finally { Marshal.ReleaseComObject(store); }
             return true;
@@ -100,7 +103,8 @@ public static class Native
         if (app.BoundAppId.Length > 0) return app.BoundAppId == window.AppId;
         var iconId = Path.GetFileNameWithoutExtension(window.IconPath);
         var desktopId = Path.GetFileNameWithoutExtension(app.DesktopId);
-        return string.Equals(iconId, desktopId, StringComparison.OrdinalIgnoreCase)
+        return (window.LinuxAppId.Length > 0 && string.Equals(window.LinuxAppId, desktopId, StringComparison.Ordinal))
+            || string.Equals(iconId, desktopId, StringComparison.OrdinalIgnoreCase)
             || string.Equals(window.DisplayName, app.SourceName + " (" + app.Distro + ")", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -109,6 +113,7 @@ public static class Native
         if (!IsWindow(window.Handle)) return false;
         GetWindowThreadProcessId(window.Handle, out var pid);
         if (pid != window.ProcessId) return false;
+        if (window.ServerWindowId != 0 && unchecked((ulong)GetProp(window.Handle, "WslgServerWindowId").ToInt64()) != window.ServerWindowId) return false;
         // HWNDs can be reused. Re-read identity immediately before any action.
         // Visibility is deliberately not required: RAIL briefly hides a window while restoring it.
         var iid = typeof(IPropertyStore).GUID;

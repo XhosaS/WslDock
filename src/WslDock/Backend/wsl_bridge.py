@@ -153,6 +153,39 @@ def launch(request):
     return {"pid": process.pid, "log": str(log), "args": args}
 
 
+def parse_window_apps(text, distro):
+    # IDs belong to one compositor session; discard associations from old sessions.
+    starts = list(re.finditer(r"(?m)^.*\bweston [0-9]+\.[0-9]+\.[0-9]+", text))
+    if starts:
+        text = text[starts[-1].start():]
+    providers = re.findall(r"appListProviderName:([^\r\n]+)\s+\[[^\]]+\]\s+appListProviderUniqueId:([0-9a-fA-F]{8})-[0-9a-fA-F-]+", text)
+    if not providers or providers[-1][0].strip() != distro:
+        return {}
+    prefix = int(providers[-1][1], 16) << 32
+    result = {}
+    for line in text.splitlines():
+        match = re.search(r"ClientGetAppidReq: pid:[0-9]+ appId:(\S+) WindowId:0x([0-9a-fA-F]+)", line)
+        if match:
+            result[str(prefix | int(match[2], 16))] = match[1]
+        else:
+            missing = re.search(r"ClientGetAppidReq: WindowId:0x([0-9a-fA-F]+) does not have appId", line)
+            if missing:
+                result.pop(str(prefix | int(missing[1], 16)), None)
+    return result
+
+
+def window_apps():
+    try:
+        with Path("/mnt/wslg/weston.log").open("rb") as log:
+            # Bound memory and fail closed if the provider/session header is unavailable.
+            data = log.read(32000001)
+            if len(data) > 32000000:
+                return {}
+            return parse_window_apps(data.decode("utf-8", errors="replace"), os.environ.get("WSL_DISTRO_NAME", ""))
+    except OSError:
+        return {}
+
+
 def status(request):
     # Only inspect markers installed by this launcher; never fuzzy-match process names.
     ids = set(request.get("ids", []))
@@ -168,7 +201,7 @@ def status(request):
                         running.add(key)
         except (OSError, UnicodeError):
             pass
-    return {"running": sorted(running)}
+    return {"running": sorted(running), "windowApps": window_apps()}
 
 
 def close_x11_window(request):

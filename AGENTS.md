@@ -8,7 +8,7 @@
 - `src/WslDock/App.xaml.cs`：生命周期、托盘、设置窗口复用。
 - `SingleInstance.cs`：当前 Windows 会话的命名互斥锁与仅限当前用户的命名管道；二次启动只转发激活意图，`--startup` 静默退出。锁必须在获得它的线程释放。
 - `DockWindow.cs` / `DesktopHost.cs`：Dock 渲染、轮询、桌面挂载与拖动。保持桌面层行为，不改为置顶窗口。
-- `Native.cs`：通过 WSLg `RAIL_WINDOW` 的公开属性读取身份。控制 HWND 前重新校验进程、应用和发行版，禁止通过任意标题模糊匹配操控窗口。
+- `Native.cs`：通过 WSLg `RAIL_WINDOW` 的公开属性读取身份。缺失图标时，`WslgCompatibility.cs` 使用 `WslgServerWindowId` 与当前会话日志的 provider/window ID 精确映射，按 desktop ID 唯一匹配后补窗口图标；退出时恢复。控制 HWND 前重新校验进程、应用和发行版，禁止通过任意标题模糊匹配操控窗口。
 - `Backend/WslService.cs` / `wsl_bridge.py`：通过 stdin/stdout JSON 调用嵌入的 Python 桥，负责发现、启动、状态和日志。
 - `SettingsWindow.cs` / `Theme.cs` / `AppMenus.cs`：设置、动态主题与菜单。
 - `StartupRegistration.cs`：仅修改当前用户 Run 键下的 WslDock 值；默认不启用自启。
@@ -44,6 +44,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File ./scripts/export-ic
 ```powershell
 python -m unittest discover -s tests -v
 dotnet run --project tests/SingleInstance/SingleInstance.Tests.csproj -c Release
+dotnet run --project tests/WslRequests/WslRequests.Tests.csproj -c Release
 ```
 
 单实例测试使用随机命名空间和真实子进程，覆盖启动期间激活、多次转发、正常释放和异常退出恢复，不影响运行中的应用。GUI 变更还需实际检查重复启动、最小化恢复、设置窗口复用及深浅主题，并用 Computer Use 更新 `docs/screenshots`。
@@ -60,7 +61,7 @@ dotnet run --project tests/SingleInstance/SingleInstance.Tests.csproj -c Release
 ## 实现边界
 
 - 启动命令按参数解析，不通过 shell 拼接执行；保留已有包装器和输入法配置。
-- 缩放仅作用于新进程，不写 `.wslgconfig`、Xresources、xrandr 或全局环境。不得自动终止用户应用或执行 `wsl --shutdown`。
+- 缩放仅作用于新进程，不写 `.wslgconfig`、Xresources、xrandr 或全局环境。不得自动终止用户应用或执行 `wsl --shutdown`；托盘“关闭 WSL”仅在用户点击并确认后执行，暂停后台桥请求以避免重新唤醒。
 - 状态灯只查询运行发行版，查询失败显示未知状态；不为轮询唤醒停止的发行版。
 - 普通应用图标没有右键关闭/预览菜单。窗口关闭桥仅供显式集成测试清理使用。
 - 退出 WslDock 不关闭 WSL 应用；设置关闭后保持托盘和 Dock。

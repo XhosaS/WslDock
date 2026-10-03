@@ -116,6 +116,7 @@ public sealed class DockWindow : Window
     private void RefreshWindows()
     {
         windows = Native.Windows();
+        Native.RepairWslgIcons(windows, App.Current.Prefs.Apps);
         foreach (var app in App.Current.Prefs.Apps)
         {
             var matched = ForApp(app);
@@ -128,7 +129,7 @@ public sealed class DockWindow : Window
     }
     private async Task PollProcesses()
     {
-        if (polling || (DateTime.UtcNow - lastPoll).TotalSeconds < 5) return;
+        if (App.Current.Wsl.IsShuttingDown || polling || (DateTime.UtcNow - lastPoll).TotalSeconds < 5) return;
         polling = true; lastPoll = DateTime.UtcNow;
         try
         {
@@ -144,10 +145,13 @@ public sealed class DockWindow : Window
                 StatusLight.SetRunning(null);
                 throw;
             }
+            Native.RetainWslgDistros(active);
             var next = new HashSet<string>();
+            if (App.Current.Wsl.BackgroundPaused) { running.Clear(); return; }
             foreach (var group in App.Current.Prefs.Apps.GroupBy(a => a.Distro).Where(g => active.Contains(g.Key)))
             {
-                var value = await App.Current.Wsl.RequestAsync(group.Key, new { action = "status", ids = group.Select(a => a.Id).ToArray() });
+                var value = await App.Current.Wsl.RequestAsync(group.Key, new { action = "status", ids = group.Select(a => a.Id).ToArray() }, background: true);
+                Native.UpdateWslgIdentities(group.Key, value.GetProperty("windowApps"));
                 foreach (var item in value.GetProperty("running").EnumerateArray()) next.Add(item.GetString()!);
             }
             running.Clear(); running.UnionWith(next);
@@ -157,6 +161,7 @@ public sealed class DockWindow : Window
     }
     public async Task OpenApp(DockApp app)
     {
+        if (App.Current.Wsl.IsShuttingDown) { ShowStatus("正在关闭 WSL，请稍后重试。"); return; }
         AppMenus.Close(); RefreshWindows();
         try
         {
@@ -168,6 +173,7 @@ public sealed class DockWindow : Window
             }
         }
         catch (Exception ex) { Config.Log("Display health: " + ex.Message); }
+        if (App.Current.Wsl.IsShuttingDown || App.Current.Wsl.BackgroundPaused) return;
         var targets = ForApp(app);
         if (targets.Count > 0) { if (!Native.Restore(targets[0])) ShowStatus("Windows 暂未允许切换焦点，请再点击一次。"); return; }
         if (launching.TryGetValue(app.Id, out var started) && (DateTime.UtcNow - started).TotalSeconds < 20) { ShowStatus(app.Name + " 正在启动…"); return; }
@@ -178,11 +184,16 @@ public sealed class DockWindow : Window
             await App.Current.Wsl.LaunchAsync(app, MonitorScale);
             // A successful launcher exit isn't proof of a visible GUI. Allow WSLg time to register it.
             await Task.Delay(1500); RefreshWindows();
-            var health = await App.Current.Wsl.DisplayHealthAsync(app.Distro);
+            var health = await App.Current.Wsl.DisplayHealthAsync(app.Distro, background: true);
             if (health.Broken) { launching.Remove(app.Id); App.Current.OpenDisplaySettings(); return; }
             if (ForApp(app).Count == 0) ShowStatus("启动请求已发送；若窗口未出现，请查看设置中的应用日志。");
         }
         catch (Exception ex) { launching.Remove(app.Id); ShowStatus(app.Name + " 启动失败"); MessageBox.Show(ex.Message, "WslDock · 启动失败", MessageBoxButton.OK, MessageBoxImage.Warning); Config.Log(ex.ToString()); }
+    }
+    public void ClearWslState()
+    {
+        running.Clear(); launching.Clear(); Native.RetainWslgDistros(Array.Empty<string>());
+        lastPoll = DateTime.MinValue; StatusLight.SetRunning(false); RefreshWindows();
     }
     public void ShowStatus(string message)
     {

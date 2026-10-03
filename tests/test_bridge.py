@@ -61,6 +61,30 @@ class BridgeTests(unittest.TestCase):
                 self.assertIn('Visible', names)
 
 
+class WindowIdentityTests(unittest.TestCase):
+    header = "weston 9.0.0\n[00:00] appListProviderName:Ubuntu\n[00:00] appListProviderUniqueId:00000001-FACB-11E6-BD58-64006A7986D3\n"
+    window = "[00:01] Client: ClientGetAppidReq: pid:123 appId:org.gnome.Nautilus WindowId:0x172\n"
+
+    def test_exact_provider_and_full_desktop_id(self):
+        self.assertEqual(bridge.parse_window_apps(self.header + self.window, 'Ubuntu'),
+                         {str((1 << 32) | 0x172): 'org.gnome.Nautilus'})
+
+    def test_other_distro_and_missing_header_are_rejected(self):
+        self.assertEqual(bridge.parse_window_apps(self.header + self.window, 'Debian'), {})
+        self.assertEqual(bridge.parse_window_apps(self.window, 'Ubuntu'), {})
+
+    def test_new_session_discards_old_windows(self):
+        self.assertEqual(bridge.parse_window_apps(self.header + self.window + self.header, 'Ubuntu'), {})
+
+    def test_reused_window_id_uses_latest_identity(self):
+        text = self.header + self.window + self.window.replace('org.gnome.Nautilus', 'other.App')
+        self.assertEqual(bridge.parse_window_apps(text, 'Ubuntu')[str((1 << 32) | 0x172)], 'other.App')
+
+    def test_missing_app_id_invalidates_previous_identity(self):
+        text = self.header + self.window + 'ClientGetAppidReq: WindowId:0x172 does not have appId, or not top level window.'
+        self.assertEqual(bridge.parse_window_apps(text, 'Ubuntu'), {})
+
+
 class DisplayHealthTests(unittest.TestCase):
     def test_shared_memory_failure(self):
         health = bridge.parse_display_health("[00:00] weston 9.0.0\n[00:01] rdp_allocate_shared_memory: Failed to open shared memory: Input/output error")

@@ -72,6 +72,15 @@ public static class SmokeTest
             var wsl = new WslService(); var distros = await wsl.DistrosAsync(); checks["distros"] = distros;
             var apps = await wsl.DiscoverAsync(distros.First());
             foreach (var a in apps) a.Visible = a.Name == "Codex" || a.Name.Contains("Chrome") || a.ScaleProfile == "alacritty";
+            foreach (var distro in distros)
+            {
+                var identities = await wsl.RequestAsync(distro, new { action = "status", ids = Array.Empty<string>() });
+                Native.UpdateWslgIdentities(distro, identities.GetProperty("windowApps"));
+            }
+            var iconWindows = Native.Windows().Where(w => w.IconPath.Length == 0 && w.LinuxAppId == "org.gnome.Nautilus").ToList();
+            Native.RepairWslgIcons(iconWindows, apps);
+            checks["nautilusIconWindowCount"] = iconWindows.Count;
+            if (iconWindows.Count > 0) checks["nautilusNativeIconsRepaired"] = iconWindows.All(Native.HasRepairedIcon);
             App.Current.Prefs = new Preferences { Apps = apps };
             App.Current.Dock = new DockWindow(); App.Current.Dock.Show();
             await Task.Delay(500); Capture(App.Current.Dock, Path.Combine(folder, "dock.png"));
@@ -168,7 +177,7 @@ public static class SmokeTest
             {
                 Theme.Apply(mode);
                 var trayMenu = AppMenus.Tray(); AppMenus.ShowAtPointer(trayMenu); await Task.Delay(200);
-                checks["trayCommands-" + mode] = trayMenu.Items.OfType<MenuItem>().Select(i => i.Header).SequenceEqual(new[] { "显示 WslDock", "设置", "退出 WslDock" });
+                checks["trayCommands-" + mode] = trayMenu.Items.OfType<MenuItem>().Select(i => i.Header).SequenceEqual(new[] { "显示 WslDock", "设置", "关闭 WSL", "退出 WslDock" });
                 checks["trayTheme-" + mode] = trayMenu.Background is SolidColorBrush brush && (mode == "dark" ? brush.Color.R < 80 : brush.Color.R > 240);
                 Capture(trayMenu, Path.Combine(folder, "tray-menu-" + mode + ".png"));
                 var dockMenu = AppMenus.Dock(); AppMenus.ShowAtPointer(dockMenu); await Task.Delay(150);

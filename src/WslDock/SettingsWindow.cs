@@ -195,7 +195,7 @@ public sealed class SettingsWindow : Window
             var states = new List<string>(); bool broken = false;
             foreach (var distro in names)
             {
-                var health = await App.Current.Wsl.DisplayHealthAsync(distro);
+                var health = await App.Current.Wsl.DisplayHealthAsync(distro, background: true);
                 states.Add(distro + " · " + health.Message); broken |= health.Broken;
             }
             summary.Text = string.Join("\n", states); summary.Foreground = Ui.Brush(broken ? "#B3261E" : "#242424");
