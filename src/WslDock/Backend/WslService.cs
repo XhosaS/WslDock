@@ -39,32 +39,19 @@ public sealed class WslService
         return doc.RootElement.Clone();
     }, background);
 
-    // WSLg resolves SVG/theme icons that the dependency-free Linux bridge cannot
-    // decode. Reuse its local ICO and persist PNG pixels for the Dock/settings UI.
-    // This migration is entirely local and must never start a stopped distro.
-    public static bool TryFillCachedIcon(DockApp app)
+    // Refresh only for a distro already running, or during an explicit launch.
+    public async Task<bool> RefreshIconsAsync(string distro, IEnumerable<DockApp> apps, bool background = true)
     {
-        if (app.IconPng.Length > 0 || app.Distro.Length == 0 || app.DesktopId.Length == 0) return false;
-        if (app.Distro.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) return false;
-        var desktopId = Path.GetFileNameWithoutExtension(app.DesktopId);
-        var folder = Path.Combine(Path.GetTempPath(), "WSLDVCPlugin", app.Distro);
-        foreach (var id in new[] { desktopId, desktopId.Split('.').Last() }.Distinct())
+        var pending = apps.Where(a => a.IconSource != "linux").ToArray();
+        if (pending.Length == 0) return false;
+        var result = await RequestAsync(distro, new { action = "icons", apps = pending }, background);
+        foreach (var item in result.GetProperty("icons").EnumerateArray())
         {
-            if (id.Length == 0 || id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) continue;
-            try
-            {
-                using var source = File.OpenRead(Path.Combine(folder, id + ".ico"));
-                var decoder = new IconBitmapDecoder(source, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-                var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).First();
-                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(frame);
-                using var output = new MemoryStream(); encoder.Save(output);
-                app.IconPng = Convert.ToBase64String(output.ToArray());
-                return true;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException or System.Runtime.InteropServices.COMException)
-            { /* Missing/corrupt cache: keep the existing placeholder and try another ID. */ }
+            var app = pending.Single(a => a.Id == item.GetProperty("id").GetString());
+            app.IconPng = item.GetProperty("iconPng").GetString() ?? "";
+            app.IconSource = "linux";
         }
-        return false;
+        return true;
     }
 
     public async Task<List<DockApp>> DiscoverAsync(string distro)
@@ -74,7 +61,7 @@ public sealed class WslService
         foreach (var a in apps)
         {
             a.Distro = distro;
-            TryFillCachedIcon(a);
+            a.IconSource = "linux";
             if (a.IconPng.Length == 0) continue;
             try
             {
@@ -88,17 +75,11 @@ public sealed class WslService
         return apps;
     }
 
-    public async Task<DisplayHealth> DisplayHealthAsync(string distro, bool background = false)
-    {
-        var result = await RequestAsync(distro, new { action = "display_health" }, background);
-        var health = result.Deserialize<DisplayHealth>(Config.Json) ?? new();
-        if (Native.Windows().Any(w => w.Distro == distro && w.Title.Contains("[WARN:COPY MODE]")))
-            return new DisplayHealth { State = "broken", Message = "WSLg 已进入 COPY MODE，窗口画面可能不可用。", Detail = health.Detail };
-        return health;
-    }
+    public Task<JsonElement> LaunchAsync(DockApp app) => RequestAsync(app.Distro,
+        new { action = "launch", app, keyringPassword = KeyringPassword.Read(App.Current.Prefs, app.Distro) });
 
-    public Task<JsonElement> LaunchAsync(DockApp app, double monitorScale) => RequestAsync(app.Distro,
-        new { action = "launch", app, scale = app.ScalePercent == 0 ? Math.Clamp(monitorScale, 1, 3) : app.ScalePercent / 100.0 });
+    public Task<JsonElement> UnlockKeyringAsync(string distro, string password) =>
+        RequestAsync(distro, new { action = "unlock_keyring", password });
 
     public async Task CloseWindowAsync(DockApp app, AppWindow window)
     {
@@ -153,13 +134,4 @@ public sealed class WslService
         if (process.ExitCode != 0) throw new InvalidOperationException((stdout + "\n" + stderr).Trim());
         return stdout;
     }
-}
-
-public sealed class DisplayHealth
-{
-    public string State { get; set; } = "unknown";
-    public string Message { get; set; } = "无法确认显示状态";
-    public string Detail { get; set; } = "";
-    public bool Broken => State == "broken";
-    public const string Recovery = "请保存 WSL 中的工作后，更新 WSL 并重启会话。更新可使用 wsl --update，重启使用 wsl --shutdown。重启会停止所有 WSL 进程；WslDock 不会自动执行。";
 }

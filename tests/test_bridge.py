@@ -23,27 +23,19 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bridge.exec_args('app --url=%U')
 
-    def test_scale_replaces_existing_flag(self):
-        request = {'app': {'id': 'a', 'command': 'chrome --force-device-scale-factor=2 --new-window', 'scaleProfile': 'chromium'}, 'scale': 1.5}
-        args, env = bridge.build_launch(request)
-        self.assertEqual(args, ['chrome', '--new-window', '--force-device-scale-factor=1.5'])
-        self.assertEqual(env['WSLDOCK_APP_ID'], 'a')
+    def test_launch_preserves_native_command_and_environment(self):
+        with patch.dict(os.environ, {'WAYLAND_DISPLAY': 'wayland-0', 'GDK_BACKEND': 'wayland'}):
+            args, env = bridge.build_launch({'app': {'id': 'a', 'command': 'code-wsl --ozone-platform=wayland --new-window'}})
+            self.assertEqual(args, ['code-wsl', '--ozone-platform=wayland', '--new-window'])
+            self.assertEqual(env['WAYLAND_DISPLAY'], 'wayland-0')
+            self.assertEqual(env['GDK_BACKEND'], 'wayland')
+            self.assertEqual(env['WSLDOCK_APP_ID'], 'a')
 
-    def test_alacritty_has_local_native_scale(self):
-        with patch.dict(os.environ, {'WAYLAND_DISPLAY': 'wayland-0'}):
-            args, env = bridge.build_launch({'app': {'id': 'a', 'command': 'alacritty', 'scaleProfile': 'alacritty'}, 'scale': 2})
-            self.assertNotIn('WAYLAND_DISPLAY', env)
-            self.assertEqual(os.environ['WAYLAND_DISPLAY'], 'wayland-0')
-            self.assertEqual(env['WINIT_X11_SCALE_FACTOR'], '2')
-
-    def test_invalid_scales(self):
-        for scale in [0, 5, float('nan'), float('inf')]:
-            with self.assertRaises(ValueError):
-                bridge.build_launch({'app': {'id': 'a', 'command': 'app'}, 'scale': scale})
-
-    def test_unknown_framework_keeps_command(self):
-        args, _ = bridge.build_launch({'app': {'id': 'a', 'command': 'unknown --flag', 'scaleProfile': 'none'}, 'scale': 2})
-        self.assertEqual(args, ['unknown', '--flag'])
+    def test_old_scaling_metadata_has_no_effect(self):
+        args, env = bridge.build_launch({'app': {'id': 'a', 'command': 'ghostty', 'scaleProfile': 'gtk', 'scalePercent': 200}, 'scale': 2, 'appScalingEnabled': True})
+        self.assertEqual(args, ['ghostty'])
+        self.assertEqual(env.get('GDK_SCALE'), os.environ.get('GDK_SCALE'))
+        self.assertEqual(env.get('GDK_BACKEND'), os.environ.get('GDK_BACKEND'))
 
     def test_hidden_user_entry_masks_system(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -59,6 +51,21 @@ class BridgeTests(unittest.TestCase):
                 names = [a['name'] for a in result]
                 self.assertNotIn('Hidden', names)
                 self.assertIn('Visible', names)
+
+
+class KeyringLaunchTests(unittest.TestCase):
+    def test_unlock_failure_prevents_application_start(self):
+        request = {'app': {'id': 'fixture', 'command': 'app'}, 'keyringPassword': 'test-secret'}
+        with patch.object(bridge, 'unlock_keyring', side_effect=ValueError('locked')) as unlock, patch.object(bridge.subprocess, 'Popen') as spawn:
+            with self.assertRaises(ValueError): bridge.launch(request)
+            unlock.assert_called_once_with('test-secret')
+            spawn.assert_not_called()
+
+    def test_icon_refresh_uses_desktop_icon_name(self):
+        with patch.object(bridge, 'icon_data', return_value='native-pixels') as icon:
+            result = bridge.refresh_icons({'apps': [{'id': 'fixture', 'iconName': 'org.gnome.Nautilus'}]})
+            self.assertEqual(result, {'icons': [{'id': 'fixture', 'iconPng': 'native-pixels'}]})
+            icon.assert_called_once_with('org.gnome.Nautilus')
 
 
 class WindowIdentityTests(unittest.TestCase):
@@ -83,26 +90,6 @@ class WindowIdentityTests(unittest.TestCase):
     def test_missing_app_id_invalidates_previous_identity(self):
         text = self.header + self.window + 'ClientGetAppidReq: WindowId:0x172 does not have appId, or not top level window.'
         self.assertEqual(bridge.parse_window_apps(text, 'Ubuntu'), {})
-
-
-class DisplayHealthTests(unittest.TestCase):
-    def test_shared_memory_failure(self):
-        health = bridge.parse_display_health("[00:00] weston 9.0.0\n[00:01] rdp_allocate_shared_memory: Failed to open shared memory: Input/output error")
-        self.assertEqual(health['state'], 'broken')
-
-    def test_old_failure_does_not_poison_new_session(self):
-        log = "weston 9.0.0\nrdp_allocate_shared_memory: Failed to open\nweston 9.0.0\nSession started"
-        self.assertEqual(bridge.parse_display_health(log)['state'], 'ready')
-
-    def test_missing_session_is_unknown(self):
-        self.assertEqual(bridge.parse_display_health('')['state'], 'unknown')
-
-    def test_unrelated_error_is_not_a_graphics_failure(self):
-        self.assertEqual(bridge.parse_display_health('weston 9.0.0\nclipboard: Failed')['state'], 'ready')
-
-    def test_latest_session_failure_still_counts(self):
-        log = "weston 9.0.0\nReady\nweston 9.0.0\nrdp_allocate_shared_memory: Failed to open"
-        self.assertEqual(bridge.parse_display_health(log)['state'], 'broken')
 
 
 if __name__ == '__main__':

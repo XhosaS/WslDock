@@ -71,15 +71,15 @@ public static class SmokeTest
                 }
             var wsl = new WslService(); var distros = await wsl.DistrosAsync(); checks["distros"] = distros;
             var apps = await wsl.DiscoverAsync(distros.First());
-            foreach (var a in apps) a.Visible = a.Name == "Codex" || a.Name.Contains("Chrome") || a.ScaleProfile == "alacritty";
+            foreach (var a in apps) a.Visible = a.Name == "Codex" || a.Name.Contains("Chrome") || a.IsTerminal || a.DesktopId is "com.mitchellh.ghostty.desktop" or "org.gnome.Nautilus.desktop" || a.DesktopId == "code-wsl.desktop";
             var nautilus = apps.FirstOrDefault(a => a.DesktopId == "org.gnome.Nautilus.desktop");
             if (nautilus != null)
             {
                 checks["nautilusDockImageLoaded"] = Ui.Icon(nautilus) is Image { Source: BitmapSource };
-                var old = new DockApp { Distro = nautilus.Distro, DesktopId = nautilus.DesktopId };
-                checks["nautilusEmptyCacheMigrated"] = WslService.TryFillCachedIcon(old) && Ui.Icon(old) is Image { Source: BitmapSource };
+                var old = new DockApp { Distro = nautilus.Distro, DesktopId = nautilus.DesktopId, IconName = nautilus.IconName };
+                checks["nautilusEmptyCacheMigrated"] = await wsl.RefreshIconsAsync(old.Distro, new[] { old }, false) && Ui.Icon(old) is Image { Source: BitmapSource };
                 var original = old.IconPng;
-                checks["existingIconPreserved"] = !WslService.TryFillCachedIcon(old) && old.IconPng == original;
+                checks["existingIconPreserved"] = !await wsl.RefreshIconsAsync(old.Distro, new[] { old }, false) && old.IconPng == original;
                 nautilus.Visible = true;
             }
             foreach (var distro in distros)
@@ -97,7 +97,7 @@ public static class SmokeTest
             Directory.CreateDirectory(fixtureDir); File.WriteAllText(fixtureExe, "Isolated startup registration fixture; never executed.");
             var startup = new StartupRegistration(fixtureExe, startupKey);
             using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(startupKey)) key.SetValue("Unrelated", "preserved");
-            settings = new SettingsWindow(startup); settings.Show(); await Task.Delay(800);
+            settings = new SettingsWindow(startup) { Height = 1000 }; settings.Show(); await Task.Delay(800);
             var startupSwitch = Descendants<CheckBox>(settings).Single(c => System.Windows.Automation.AutomationProperties.GetName(c) == "开机自启动");
             checks["startupDefaultsOff"] = startupSwitch.IsChecked == false;
             startupSwitch.IsChecked = true;
@@ -116,8 +116,20 @@ public static class SmokeTest
                 && Descendants<TextBlock>(settings).Any(t => t.Text.StartsWith("无法修改自启动设置"));
             checks["realStartupUnchanged"] = Equals(originalStartup, Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\" + StartupRegistration.RunKey, "WslDock", null));
             Capture(settings, Path.Combine(folder, "settings.png"));
-            var scaleNav = Descendants<Button>(settings).First(b => Descendants<TextBlock>(b).Any(t => t.Text == "显示设置"));
-            scaleNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(500); settings.UpdateLayout(); checks["scalePageLaidOut"] = Descendants<TextBlock>(settings).Any(t => t.Text == "显示设置" && t.FontSize == 28 && t.ActualWidth > 0); Capture(settings, Path.Combine(folder, "scaling.png"));
+            var keyringNav = Descendants<Button>(settings).First(b => Descendants<TextBlock>(b).Any(t => t.Text == "密钥环密码"));
+            keyringNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(250);
+            checks["keyringPasswordFieldMasked"] = Descendants<PasswordBox>(settings).Count() == 1
+                && !Descendants<TextBox>(settings).Any();
+            checks["keyringDistroSelector"] = Descendants<ComboBox>(settings).Any(c => c.SelectedItem is string);
+            foreach (var mode in new[] { "light", "dark" })
+            {
+                Theme.Apply(mode); await Task.Delay(100); Capture(settings, Path.Combine(folder, "keyring-" + mode + ".png"));
+            }
+            checks["onlyRemainingSettingsPages"] = !Descendants<TextBlock>(settings).Any(t => t.Text == "显示设置");
+            checks["displayControlsRemoved"] = !Descendants<ComboBox>(settings).Any(c => System.Windows.Automation.AutomationProperties.GetName(c) == "夜间模式" || System.Windows.Automation.AutomationProperties.GetName(c).EndsWith(" 缩放"));
+            var appsNav = Descendants<Button>(settings).First(b => Descendants<TextBlock>(b).Any(t => t.Text == "配置应用"));
+            appsNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
+            if (Environment.GetEnvironmentVariable("WSLDOCK_CAPTURE_UI") == "1") await Task.Delay(60000);
             checks["desktopAttached"] = App.Current.Dock.DesktopAttached;
             checks["desktopHasLayeredSurface"] = App.Current.Dock.HasCompositedSurface;
             checks["dockNotClippedAtFullWidth"] = DockIsNotClipped();
@@ -132,9 +144,9 @@ public static class SmokeTest
                 && resetRect.Top >= primary.Top && resetRect.Bottom <= primary.Bottom;
             checks["desktopParent"] = DesktopHost.GetParent(new WindowInteropHelper(App.Current.Dock).Handle).ToInt64();
             Theme.Apply("dark"); await Task.Delay(200);
-            Capture(settings, Path.Combine(folder, "display-dark.png")); Capture(App.Current.Dock, Path.Combine(folder, "dock-dark.png"));
+            Capture(settings, Path.Combine(folder, "apps-dark.png")); Capture(App.Current.Dock, Path.Combine(folder, "dock-dark.png"));
             checks["darkTheme"] = Theme.IsDark && Ui.Brush("#242424").Color.R > 200;
-            Theme.Apply("light"); await Task.Delay(200); Capture(settings, Path.Combine(folder, "display-light.png"));
+            Theme.Apply("light"); await Task.Delay(200); Capture(settings, Path.Combine(folder, "apps-light.png"));
             checks["lightTheme"] = !Theme.IsDark && Ui.Brush("#242424").Color.R < 100;
             settings.Close(); settings = null;
             var active = await wsl.DistrosAsync(runningOnly: true, includeSystem: true);
@@ -162,16 +174,13 @@ public static class SmokeTest
             checks["wslUnknownNotReportedAsStopped"] = ((SolidColorBrush)lamp.Fill).Color.A == 0
                 && System.Windows.Automation.AutomationProperties.GetName(status).Contains("暂不可用");
             status.SetRunning(actualState);
-            var health = await wsl.DisplayHealthAsync(distros.First()); checks["displayHealth"] = health;
-            checks["noKnownDisplayFailure"] = health.State == "ready";
-            if (health.State != "ready") throw new InvalidOperationException("Cannot validate GUI while display is degraded: " + health.Message);
             checks["defaultApps"] = apps.Where(a => a.Visible).Select(a => a.Name).ToArray();
-            var terminal = apps.First(a => a.ScaleProfile == "alacritty");
+            var terminal = apps.First(a => a.IsTerminal);
             var probe = JsonSerializer.Deserialize<DockApp>(JsonSerializer.Serialize(terminal, Config.Json), Config.Json)!;
             probe.Id = "wsldock-integration-" + Guid.NewGuid().ToString("N");
             var unique = "WslDock-test-" + Guid.NewGuid().ToString("N")[..8];
-            probe.Command = terminal.Command + " --title " + unique; probe.ScalePercent = 200;
-            var launch = await wsl.LaunchAsync(probe, 2); checks["launch"] = launch;
+            probe.Command = "env -u WAYLAND_DISPLAY WINIT_UNIX_BACKEND=x11 " + terminal.Command + " --title " + unique;
+            var launch = await wsl.LaunchAsync(probe); checks["launch"] = launch;
             checks["windowAssociated"] = await Until(() => { owned = Native.Windows().FirstOrDefault(w => w.Title.Contains(unique) && Native.Matches(terminal, w)); return owned != null; });
             if (owned == null) throw new InvalidOperationException("No test terminal appeared");
             await Task.Delay(1000);
@@ -191,6 +200,7 @@ public static class SmokeTest
                 checks["trayTheme-" + mode] = trayMenu.Background is SolidColorBrush brush && (mode == "dark" ? brush.Color.R < 80 : brush.Color.R > 240);
                 Capture(trayMenu, Path.Combine(folder, "tray-menu-" + mode + ".png"));
                 var dockMenu = AppMenus.Dock(); AppMenus.ShowAtPointer(dockMenu); await Task.Delay(150);
+                checks["dockCommands-" + mode] = dockMenu.Items.OfType<MenuItem>().Select(i => i.Header).SequenceEqual(new[] { "设置", "关闭 WSL", "退出 WslDock" });
                 checks["oneMenuAtATime-" + mode] = !trayMenu.IsOpen && dockMenu.IsOpen;
                 Capture(dockMenu, Path.Combine(folder, "dock-menu-" + mode + ".png"));
                 // Existing Dock and tray menus continue to track changes while open.
@@ -219,7 +229,7 @@ public static class SmokeTest
             AppMenus.Close();
             if (owned != null && Native.IsWindow(owned.Handle))
             {
-                var terminal = App.Current.Prefs.Apps.FirstOrDefault(a => a.ScaleProfile == "alacritty");
+                var terminal = App.Current.Prefs.Apps.FirstOrDefault(a => a.IsTerminal);
                 if (terminal != null)
                     try { await App.Current.Wsl.CloseWindowAsync(terminal, owned); }
                     catch (Exception ex) { checks["cleanupError"] = ex.Message; }

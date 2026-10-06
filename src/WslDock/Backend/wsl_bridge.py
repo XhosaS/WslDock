@@ -4,7 +4,6 @@ import configparser
 import ctypes as C
 import ctypes.util
 import json
-import math
 import os
 import re
 import shlex
@@ -37,31 +36,196 @@ def exec_args(command, name="", icon="", desktop=""):
     return result
 
 
-def profile_for(command):
-    lower = command.lower()
-    if any(x in lower for x in ("google-chrome", "chromium", "codex-pinyin", "chatgpt", "electron")):
-        return "chromium"
-    if "alacritty" in lower:
-        return "alacritty"
-    return "none"
+_icon_libraries = None
+
+
+def native_icons():
+    global _icon_libraries
+    if _icon_libraries is not None:
+        return _icon_libraries
+    gtk = C.CDLL(ctypes.util.find_library("gtk-3") or "libgtk-3.so.0")
+    pix = C.CDLL(ctypes.util.find_library("gdk_pixbuf-2.0") or "libgdk_pixbuf-2.0.so.0")
+    glib = C.CDLL(ctypes.util.find_library("glib-2.0") or "libglib-2.0.so.0")
+    obj = C.CDLL(ctypes.util.find_library("gobject-2.0") or "libgobject-2.0.so.0")
+    gtk.gtk_init_check.argtypes = [C.c_void_p, C.c_void_p]
+    gtk.gtk_init_check.restype = C.c_int
+    gtk.gtk_icon_theme_get_default.restype = C.c_void_p
+    gtk.gtk_icon_theme_new.restype = C.c_void_p
+    gtk.gtk_icon_theme_set_custom_theme.argtypes = [C.c_void_p, C.c_char_p]
+    gtk.gtk_icon_theme_load_icon.argtypes = [C.c_void_p, C.c_char_p, C.c_int, C.c_int, C.POINTER(C.c_void_p)]
+    gtk.gtk_icon_theme_load_icon.restype = C.c_void_p
+    pix.gdk_pixbuf_new_from_file_at_scale.argtypes = [C.c_char_p, C.c_int, C.c_int, C.c_int, C.POINTER(C.c_void_p)]
+    pix.gdk_pixbuf_new_from_file_at_scale.restype = C.c_void_p
+    pix.gdk_pixbuf_save_to_buffer.argtypes = [C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_size_t), C.c_char_p, C.POINTER(C.c_void_p)]
+    pix.gdk_pixbuf_save_to_buffer.restype = C.c_int
+    glib.g_free.argtypes = [C.c_void_p]
+    glib.g_error_free.argtypes = [C.c_void_p]
+    obj.g_object_unref.argtypes = [C.c_void_p]
+    if gtk.gtk_init_check(None, None):
+        theme = gtk.gtk_icon_theme_get_default()
+    else:
+        theme = gtk.gtk_icon_theme_new()
+        gtk.gtk_icon_theme_set_custom_theme(theme, b"Adwaita")
+    _icon_libraries = gtk, pix, glib, obj, theme
+    return _icon_libraries
 
 
 def icon_data(icon):
     if not icon:
         return ""
-    paths = [Path(icon)] if icon.startswith("/") else [
-        Path.home() / ".local/share/icons" / (icon + ".png"),
-        *[Path("/usr/share/icons/hicolor") / size / "apps" / (icon + ".png")
-          for size in ("128x128", "256x256", "64x64", "48x48", "32x32")],
-        Path("/usr/share/pixmaps") / (icon + ".png"),
-    ]
-    for path in paths:
-        try:
-            if path.suffix.lower() == ".png" and 0 < path.stat().st_size < 2000000:
-                return base64.b64encode(path.read_bytes()).decode("ascii")
-        except OSError:
-            pass
+    image = None
+    buffer, error, size = C.c_void_p(), C.c_void_p(), C.c_size_t()
+    try:
+        gtk, pix, glib, obj, theme = native_icons()
+        if os.path.isabs(icon):
+            image = pix.gdk_pixbuf_new_from_file_at_scale(os.fsencode(icon), 128, 128, 1, C.byref(error))
+        else:
+            # GTK resolves the active theme, inheritance, XDG paths and scalable SVG.
+            image = gtk.gtk_icon_theme_load_icon(theme, icon.encode(), 128, 16, C.byref(error))
+        if error.value:
+            glib.g_error_free(error); error = C.c_void_p()
+        if image and pix.gdk_pixbuf_save_to_buffer(image, C.byref(buffer), C.byref(size), b"png", C.byref(error), C.c_void_p()):
+            if 0 < size.value < 2000000:
+                return base64.b64encode(C.string_at(buffer, size.value)).decode("ascii")
+    except (OSError, AttributeError):
+        # Minimal distros can still use a PNG specified by its absolute path.
+        roots = [Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))]
+        roots += [Path(x) for x in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(os.pathsep) if x]
+        filename = icon if icon.endswith(".png") else icon + ".png"
+        paths = [Path(icon)] if os.path.isabs(icon) else [
+            Path.home() / ".icons" / filename,
+            *[root / "icons" / filename for root in roots],
+            *[root / "icons/hicolor" / size / "apps" / filename for root in roots
+              for size in ("128x128", "256x256", "64x64", "48x48", "32x32")],
+            *[root / "pixmaps" / filename for root in roots],
+        ]
+        for path in paths:
+            try:
+                if path.suffix.lower() == ".png" and 0 < path.stat().st_size < 2000000:
+                    return base64.b64encode(path.read_bytes()).decode("ascii")
+            except OSError:
+                pass
+    finally:
+        if _icon_libraries is not None:
+            _, _, glib, obj, _ = _icon_libraries
+            if image: obj.g_object_unref(image)
+            if buffer.value: glib.g_free(buffer)
+            if error.value: glib.g_error_free(error)
     return ""
+
+
+def refresh_icons(request):
+    result = []
+    for app in request.get("apps", []):
+        icon = app.get("iconName", "")
+        if not icon and app.get("desktopPath"):
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            try:
+                parser.read(app["desktopPath"], encoding="utf-8")
+                icon = parser.get("Desktop Entry", "Icon", fallback="")
+            except (OSError, configparser.Error):
+                pass
+        result.append({"id": app["id"], "iconPng": icon_data(icon)})
+    return {"icons": result}
+
+
+class SecretBus:
+    """GIO session D-Bus. Secrets stay in memory; no shell or gdbus argv."""
+    def __init__(self):
+        self.gio = C.CDLL(ctypes.util.find_library("gio-2.0") or "libgio-2.0.so.0")
+        self.glib = C.CDLL(ctypes.util.find_library("glib-2.0") or "libglib-2.0.so.0")
+        self.obj = C.CDLL(ctypes.util.find_library("gobject-2.0") or "libgobject-2.0.so.0")
+        self.variants = []
+        ptr = C.c_void_p
+        for name, args, result in [
+            ("g_variant_parse", [ptr, C.c_char_p, ptr, ptr, C.POINTER(ptr)], ptr),
+            ("g_variant_ref_sink", [ptr], ptr),
+            ("g_variant_get_child_value", [ptr, C.c_size_t], ptr),
+            ("g_variant_get_string", [ptr, ptr], C.c_char_p),
+            ("g_variant_get_variant", [ptr], ptr),
+            ("g_variant_get_boolean", [ptr], C.c_int),
+            ("g_variant_unref", [ptr], None),
+            ("g_error_free", [ptr], None),
+        ]:
+            fn = getattr(self.glib, name); fn.argtypes = args; fn.restype = result
+        self.obj.g_object_unref.argtypes = [ptr]
+        self.gio.g_bus_get_sync.argtypes = [C.c_int, ptr, C.POINTER(ptr)]
+        self.gio.g_bus_get_sync.restype = ptr
+        self.gio.g_dbus_connection_call_sync.argtypes = [ptr, C.c_char_p, C.c_char_p, C.c_char_p, C.c_char_p, ptr, ptr, C.c_int, C.c_int, ptr, C.POINTER(ptr)]
+        self.gio.g_dbus_connection_call_sync.restype = ptr
+        error = ptr()
+        self.connection = self.gio.g_bus_get_sync(2, None, C.byref(error))
+        self.check(self.connection, error)
+
+    def check(self, value, error):
+        if error.value:
+            self.glib.g_error_free(error)
+        if not value:
+            # Never forward daemon/parse diagnostics which could contain secret bytes.
+            raise ValueError("默认密钥环解锁失败，请检查密钥环密码和会话 D-Bus。")
+        return value
+
+    def keep(self, value):
+        self.variants.append(value)
+        return value
+
+    def child(self, value, index):
+        return self.keep(self.glib.g_variant_get_child_value(value, index))
+
+    def string(self, value):
+        return self.glib.g_variant_get_string(value, None).decode()
+
+    def call(self, interface, method, parameters=None, path="/org/freedesktop/secrets"):
+        value = None
+        if parameters is not None:
+            error = C.c_void_p()
+            value = self.glib.g_variant_parse(None, parameters.encode(), None, None, C.byref(error))
+            self.check(value, error)
+            self.keep(self.glib.g_variant_ref_sink(value))
+        error = C.c_void_p()
+        reply = self.gio.g_dbus_connection_call_sync(self.connection, b"org.freedesktop.secrets", path.encode(),
+            interface.encode(), method.encode(), value, None, 0, 5000, None, C.byref(error))
+        return self.keep(self.check(reply, error))
+
+    def locked(self, collection):
+        reply = self.call("org.freedesktop.DBus.Properties", "Get",
+            "('org.freedesktop.Secret.Collection', 'Locked')", collection)
+        value = self.keep(self.glib.g_variant_get_variant(self.child(reply, 0)))
+        return bool(self.glib.g_variant_get_boolean(value))
+
+    def close(self):
+        for value in reversed(self.variants): self.glib.g_variant_unref(value)
+        self.obj.g_object_unref(self.connection)
+
+
+def unlock_keyring(password):
+    if not isinstance(password, str) or len(password) > 1024 or "\x00" in password:
+        raise ValueError("密钥环密码格式无效。")
+    bus = None
+    session = None
+    service = "org.freedesktop.Secret.Service"
+    try:
+        bus = SecretBus()
+        collection = bus.string(bus.child(bus.call(service, "ReadAlias", "('default',)"), 0))
+        if collection == "/":
+            raise ValueError("未找到默认密钥环。请先在 Linux 中设置默认密钥环。")
+        if not bus.locked(collection):
+            return {"alreadyUnlocked": True}
+        session = bus.string(bus.child(bus.call(service, "OpenSession", "('plain', <''>)"), 1))
+        secret = ", ".join("byte 0x%02x" % b for b in password.encode("utf-8"))
+        parameters = "(objectpath '%s', (objectpath '%s', @ay [], @ay [%s], 'text/plain'))" % (collection, session, secret)
+        bus.call("org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface", "UnlockWithMasterPassword", parameters)
+        if bus.locked(collection):
+            raise ValueError("默认密钥环仍被锁定，请检查密码。")
+        return {"alreadyUnlocked": False}
+    except (OSError, AttributeError):
+        raise ValueError("密钥环解锁需要 GNOME Keyring、GIO 和会话 D-Bus。") from None
+    finally:
+        if bus:
+            if session:
+                try: bus.call("org.freedesktop.Secret.Session", "Close", path=session)
+                except ValueError: pass
+            bus.close()
 
 
 def discover():
@@ -97,7 +261,7 @@ def discover():
                              "name": "Codex" if is_codex else name, "command": command,
                              "desktopPath": str(path), "workingDirectory": entry.get("Path", ""),
                              "iconName": entry.get("Icon", ""), "iconPng": icon_data(entry.get("Icon", "")),
-                             "wmClass": entry.get("StartupWMClass", ""), "scaleProfile": profile_for(command)})
+                             "wmClass": entry.get("StartupWMClass", "")})
             except (OSError, ValueError, KeyError, configparser.Error):
                 continue
     return {"apps": apps, "distro": os.environ.get("WSL_DISTRO_NAME", "")}
@@ -108,34 +272,14 @@ def build_launch(request):
     args = exec_args(app["command"], app.get("sourceName", ""), app.get("iconName", ""), app.get("desktopPath", ""))
     env = os.environ.copy()
     env["WSLDOCK_APP_ID"] = app["id"]
-    scale = float(request.get("scale", 1))
-    if not math.isfinite(scale) or not 1 <= scale <= 3:
-        raise ValueError("缩放比例应为 100%–300%")
-    profile = app.get("scaleProfile", "none")
-    if profile == "chromium":
-        clean, skip = [], False
-        for arg in args:
-            if skip:
-                skip = False
-                continue
-            if arg == "--force-device-scale-factor":
-                skip = True
-            elif not arg.startswith("--force-device-scale-factor="):
-                clean.append(arg)
-        args = clean + ["--force-device-scale-factor=" + format(scale, "g")]
-    elif profile == "alacritty":
-        # winit's native X11 render scale, not compositor bitmap stretching.
-        env["WINIT_X11_SCALE_FACTOR"] = format(scale, "g")
-        env["WINIT_UNIX_BACKEND"] = "x11"
-        env.pop("WAYLAND_DISPLAY", None)
-    elif profile != "none":
-        raise ValueError("不支持的缩放适配器")
     return args, env
 
 
 def launch(request):
     app = request["app"]
     args, env = build_launch(request)
+    if request.get("keyringPassword") is not None:
+        unlock_keyring(request["keyringPassword"])
     if not shutil.which(args[0]):
         raise ValueError("找不到可执行文件：" + args[0])
     state = Path.home() / ".local/state/wsldock"
@@ -303,38 +447,18 @@ def close_x11_window(request):
 
 
 
-def parse_display_health(text):
-    # Only the latest compositor session counts; old failures must not poison recovery.
-    starts = list(re.finditer(r"(?m)^.*\bweston [0-9]+\.[0-9]+\.[0-9]+", text))
-    if starts:
-        text = text[starts[-1].start():]
-    failure = next((line for line in reversed(text.splitlines())
-                    if "rdp_allocate_shared_memory" in line and "Failed" in line), None)
-    if failure:
-        return {"state": "broken", "message": "WSLg 无法创建窗口共享内存，应用可能只有图标而没有可用画面。",
-                "detail": failure[:1000]}
-    return {"state": "ready" if starts else "unknown",
-            "message": "未发现已知 WSLg 显示故障" if starts else "无法确认 WSLg 显示状态", "detail": ""}
-
-
-def display_health():
-    try:
-        text = Path("/mnt/wslg/weston.log").read_text(errors="replace")[-2000000:]
-        return parse_display_health(text)
-    except OSError:
-        return {"state": "unknown", "message": "无法读取 WSLg 显示日志", "detail": ""}
-
-
 def main():
     try:
         request = json.loads(sys.stdin.read())
         action = request.get("action")
         if action == "discover":
             result = discover()
+        elif action == "icons":
+            result = refresh_icons(request)
+        elif action == "unlock_keyring":
+            result = unlock_keyring(request["password"])
         elif action == "launch":
             result = launch(request)
-        elif action == "display_health":
-            result = display_health()
         elif action == "status":
             result = status(request)
         elif action == "close_window":

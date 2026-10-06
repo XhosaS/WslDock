@@ -59,6 +59,8 @@ public static class AppMenus
     {
         var menu = Create("WslDock 菜单");
         menu.Items.Add(Command("设置", "\uE713", App.Current.OpenSettings));
+        AddShutdown(menu);
+        menu.Items.Add(new Separator { Style = (Style)App.Current.FindResource("MenuSeparator") });
         menu.Items.Add(Command("退出 WslDock", "\uE8BB", () => App.Current.Shutdown(), 11));
         return menu;
     }
@@ -68,12 +70,17 @@ public static class AppMenus
         var menu = Create("WslDock 托盘菜单");
         menu.Items.Add(Command("显示 WslDock", "\uE737", () => { App.Current.Dock.Show(); App.Current.Dock.EnsureDesktop(); }));
         menu.Items.Add(Command("设置", "\uE713", App.Current.OpenSettings));
-        var shutdown = Command("关闭 WSL", "\uE7E8", async () => await App.Current.ShutdownWslAsync());
-        menu.Items.Add(shutdown);
-        menu.Opened += (_, _) => shutdown.IsEnabled = !App.Current.Wsl.IsShuttingDown;
+        AddShutdown(menu);
         menu.Items.Add(new Separator { Style = (Style)App.Current.FindResource("MenuSeparator") });
         menu.Items.Add(Command("退出 WslDock", "\uE8BB", () => App.Current.Shutdown(), 11));
         return menu;
+    }
+
+    private static void AddShutdown(ContextMenu menu)
+    {
+        var shutdown = Command("关闭 WSL", "\uE7E8", async () => await App.Current.ShutdownWslAsync());
+        menu.Items.Add(shutdown);
+        menu.Opened += (_, _) => shutdown.IsEnabled = !App.Current.Wsl.IsShuttingDown;
     }
 
     public static void ShowAtPointer(ContextMenu menu)

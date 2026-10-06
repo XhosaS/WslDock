@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Windows.Interop;
 
 namespace WslDock;
 
@@ -11,10 +9,8 @@ public sealed class SettingsWindow : Window
     private readonly StackPanel body = new();
     private readonly TextBlock notice = Ui.Text("", 12, "#666666");
     private readonly Button appsNav;
-    private readonly Button scaleNav;
-    private bool scalePage;
-    private TextBlock? displayTitle;
-    private TextBlock? displayScale;
+    private readonly Button keyringNav;
+    private bool keyringPage;
     private string selectedDistro = "";
     private List<string> distros = new();
 
@@ -33,29 +29,35 @@ public sealed class SettingsWindow : Window
         DockPanel.SetDock(brand, Dock.Top); sidebar.Children.Add(brand);
         var foot = Ui.Text("WSL 应用 · v" + typeof(App).Assembly.GetName().Version!.ToString(3), 12, "#7B7B7B"); foot.Margin = new Thickness(14, 0, 0, 0); DockPanel.SetDock(foot, Dock.Bottom); sidebar.Children.Add(foot);
         var nav = new StackPanel();
-        appsNav = Nav("\uE80A", "配置应用", false); scaleNav = Nav("\uE7F4", "显示设置", true); nav.Children.Add(appsNav); nav.Children.Add(scaleNav); sidebar.Children.Add(nav);
+        appsNav = Nav("\uE80A", "配置应用"); keyringNav = Ui.Button("密钥环密码", () => { keyringPage = true; SetNotice(""); Render(); }, true);
+        keyringNav.Height = 42; keyringNav.Margin = new Thickness(0, 0, 0, 4);
+        keyringNav.HorizontalContentAlignment = HorizontalAlignment.Left;
+        var keyringLabel = new StackPanel { Orientation = Orientation.Horizontal, Width = 156 };
+        var keyringGlyph = Ui.Glyph("\uE72E", 17); keyringGlyph.Margin = new Thickness(0, 0, 14, 0);
+        keyringLabel.Children.Add(keyringGlyph); keyringLabel.Children.Add(Ui.Text("密钥环密码")); keyringNav.Content = keyringLabel;
+        nav.Children.Add(appsNav); nav.Children.Add(keyringNav); sidebar.Children.Add(nav);
         grid.Children.Add(new Border { Background = Ui.Brush("#EEEEEE"), Child = sidebar });
         var right = new DockPanel { Margin = new Thickness(32, 24, 32, 24) }; Grid.SetColumn(right, 1);
         notice.TextWrapping = TextWrapping.Wrap; notice.Margin = new Thickness(0, 14, 0, 0); DockPanel.SetDock(notice, Dock.Bottom); right.Children.Add(notice);
         right.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }); grid.Children.Add(right); Content = grid;
         SourceInitialized += (_, _) => Native.Style(this);
-        DpiChanged += (_, _) => UpdateDisplayInfo();
         Activated += (_, _) => RefreshStartupToggle();
         Loaded += async (_, _) => { Render(); try { distros = await App.Current.Wsl.DistrosAsync(); selectedDistro = distros.FirstOrDefault() ?? ""; Render(); } catch (Exception ex) { SetNotice(ex.Message, true); } };
     }
-    private Button Nav(string glyph, string text, bool scale)
+    private Button Nav(string glyph, string text)
     {
-        var b = Ui.Button("", () => { scalePage = scale; Render(); }, true); b.Height = 42; b.Margin = new Thickness(0, 0, 0, 4); b.HorizontalContentAlignment = HorizontalAlignment.Left;
+        var b = Ui.Button("", () => { keyringPage = false; SetNotice(""); Render(); }, true); b.Height = 42; b.Margin = new Thickness(0, 0, 0, 4); b.HorizontalContentAlignment = HorizontalAlignment.Left;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Width = 156 }; var icon = Ui.Glyph(glyph, 17); icon.Margin = new Thickness(0, 0, 14, 0); row.Children.Add(icon); row.Children.Add(Ui.Text(text)); b.Content = row; return b;
     }
     private void SetNotice(string message, bool error = false) { notice.Text = message; notice.Foreground = Ui.Brush(error ? "#B3261E" : "#666666"); }
     private void Render()
     {
         body.Children.Clear(); startupToggle = null;
-        appsNav.Background = Ui.Brush(scalePage ? "#EEEEEE" : "#E1E1E1"); scaleNav.Background = Ui.Brush(scalePage ? "#E1E1E1" : "#EEEEEE");
-        var heading = Ui.Text(scalePage ? "显示设置" : "配置应用", 28); heading.FontWeight = FontWeights.SemiBold; heading.Margin = new Thickness(0, 0, 0, 10); body.Children.Add(heading);
-        var intro = Ui.Text(scalePage ? "调整界面外观、应用大小与显示状态。" : "选择在桌面 Dock 中显示的 WSL 应用。", 13, "#666666"); intro.Margin = new Thickness(0, 0, 0, 26); body.Children.Add(intro);
-        if (scalePage) RenderScale(); else RenderApps();
+        keyringNav.Background = Ui.Brush(keyringPage ? "#E1E1E1" : "#EEEEEE");
+        appsNav.Background = Ui.Brush(keyringPage ? "#EEEEEE" : "#E1E1E1");
+        var heading = Ui.Text(keyringPage ? "密钥环密码" : "配置应用", 28); heading.FontWeight = FontWeights.SemiBold; heading.Margin = new Thickness(0, 0, 0, 10); body.Children.Add(heading);
+        var intro = Ui.Text(keyringPage ? "启动 Linux 应用前自动解锁默认密钥环。" : "选择在桌面 Dock 中显示的 WSL 应用。", 13, "#666666"); intro.Margin = new Thickness(0, 0, 0, 26); body.Children.Add(intro);
+        if (keyringPage) RenderKeyring(); else RenderApps();
     }
     private void RenderApps()
     {
@@ -84,7 +86,7 @@ public sealed class SettingsWindow : Window
             actions.Children.Add(Ui.Button("保存", () =>
             {
                 if (string.IsNullOrWhiteSpace(name.Text) || string.IsNullOrWhiteSpace(command.Text)) { SetNotice("名称与启动命令不能为空。", true); return; }
-                if (app.Command != command.Text.Trim()) { app.ScaleProfile = DetectProfile(command.Text); app.BoundAppId = ""; }
+                if (app.Command != command.Text.Trim()) app.BoundAppId = "";
                 app.Name = name.Text.Trim(); app.Command = command.Text.Trim(); Save(); Render();
             }));
             var log = Ui.Button("查看启动日志", () => _ = ReadLog(app), true); log.Margin = new Thickness(8, 0, 0, 0); actions.Children.Add(log); edit.Children.Add(actions);
@@ -93,6 +95,72 @@ public sealed class SettingsWindow : Window
         if (App.Current.Prefs.Apps.Count == 0) body.Children.Add(Ui.Card(Ui.Text("选择 Ubuntu，然后点击“重新发现应用”。", 13, "#666666")));
         Note("隐藏图标不会关闭应用。启动命令按参数解析；管道、重定向和 shell 脚本请放在你自己的可执行包装器中。");
     }
+    private void RenderKeyring()
+    {
+        var panel = new StackPanel();
+        panel.Children.Add(Ui.Text("WSL 发行版", 13));
+        var select = new ComboBox { ItemsSource = distros, SelectedItem = selectedDistro,
+            HorizontalAlignment = HorizontalAlignment.Left, Width = 230, Margin = new Thickness(0, 8, 0, 18) };
+        System.Windows.Automation.AutomationProperties.SetName(select, "密钥环发行版");
+        panel.Children.Add(select);
+        var status = Ui.Text("", 12, "#777777"); status.Margin = new Thickness(0, 0, 0, 12); panel.Children.Add(status);
+        panel.Children.Add(Ui.Text("默认密钥环密码", 13));
+        var password = new PasswordBox { MaxLength = 1024, Height = 36, Padding = new Thickness(8),
+            Margin = new Thickness(0, 8, 0, 18), HorizontalAlignment = HorizontalAlignment.Stretch };
+        System.Windows.Automation.AutomationProperties.SetName(password, "默认密钥环密码"); panel.Children.Add(password);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var save = Ui.Button("保存密码", () => { });
+        var clear = Ui.Button("清除已保存密码", () => { }, true); clear.Margin = new Thickness(8, 0, 0, 0);
+        var test = Ui.Button("测试解锁", () => { }, true); test.Margin = new Thickness(8, 0, 0, 0);
+        void Update()
+        {
+            var saved = App.Current.Prefs.KeyringPasswords.ContainsKey(selectedDistro);
+            status.Text = saved ? "已保存密码；输入新密码可替换。" : "尚未保存密码";
+            save.IsEnabled = selectedDistro.Length > 0;
+            clear.IsEnabled = test.IsEnabled = saved;
+        }
+        select.SelectionChanged += (_, _) => { selectedDistro = select.SelectedItem as string ?? ""; password.Clear(); Update(); };
+        save.Click += (_, _) =>
+        {
+            if (password.Password.Length == 0) { SetNotice("请输入密钥环密码。", true); return; }
+            try
+            {
+                var prefs = App.Current.Prefs;
+                prefs.KeyringPasswords.TryGetValue(selectedDistro, out var previous);
+                prefs.KeyringPasswords[selectedDistro] = KeyringPassword.Protect(selectedDistro, password.Password);
+                try { Config.Save(prefs); }
+                catch { if (previous == null) prefs.KeyringPasswords.Remove(selectedDistro); else prefs.KeyringPasswords[selectedDistro] = previous; throw; }
+                password.Clear(); Update(); SetNotice("密码已加密保存，启动应用前会自动解锁默认密钥环。");
+            }
+            catch { SetNotice("密码保存失败，请重试。", true); }
+        };
+        clear.Click += (_, _) =>
+        {
+            var prefs = App.Current.Prefs;
+            if (!prefs.KeyringPasswords.Remove(selectedDistro, out var previous)) return;
+            try { Config.Save(prefs); password.Clear(); Update(); SetNotice("已清除密码，后续由 Linux 显示解锁提示。"); }
+            catch { prefs.KeyringPasswords[selectedDistro] = previous; SetNotice("清除失败，请重试。", true); }
+        };
+        test.Click += async (_, _) =>
+        {
+            var distro = selectedDistro; test.IsEnabled = false; select.IsEnabled = false;
+            SetNotice("正在解锁 " + distro + " 的默认密钥环…");
+            try
+            {
+                var secret = KeyringPassword.Read(App.Current.Prefs, distro)!;
+                var result = await App.Current.Wsl.UnlockKeyringAsync(distro, secret);
+                SetNotice(result.GetProperty("alreadyUnlocked").GetBoolean() ? "密钥环已经解锁；下次冷启动时会使用保存的密码。" : "默认密钥环已成功解锁。");
+            }
+            catch { SetNotice("解锁失败。请确认保存的是密钥环密码，且发行版有 GNOME Keyring 和会话 D-Bus。", true); }
+            finally { select.IsEnabled = true; Update(); }
+        };
+        actions.Children.Add(save); actions.Children.Add(clear); actions.Children.Add(test); panel.Children.Add(actions);
+        body.Children.Add(Ui.Card(panel)); Update();
+        Note("填写 Linux 的 Unlock Keyring 窗口所需的密码。此设置不会修改 Linux 的用户密码或密钥环密码。");
+        Note("密码按发行版保存，并由当前 Windows 用户加密保护；不会写入命令行或启动日志。清除密码即可关闭自动解锁。");
+        Note("“测试解锁”会启动选中的发行版；若密钥环已经解锁，本次测试无法验证密码是否正确。");
+    }
+
     private void RenderStartup()
     {
         var row = new DockPanel();
@@ -122,95 +190,12 @@ public sealed class SettingsWindow : Window
         try { startup.SetEnabled(enabled); SetNotice(enabled ? "已开启开机自启动" : "已关闭开机自启动"); }
         catch (Exception ex) { RefreshStartupToggle(); SetNotice("无法修改自启动设置：" + ex.Message, true); Config.Log(ex.ToString()); }
     }
-    private static string DetectProfile(string command)
-    {
-        var c = command.ToLowerInvariant();
-        if (c.Contains("alacritty")) return "alacritty";
-        if (new[] { "google-chrome", "chromium", "codex-pinyin", "chatgpt", "electron" }.Any(c.Contains)) return "chromium";
-        return "none";
-    }
     private async Task RefreshApps()
     {
         if (selectedDistro.Length == 0) { SetNotice("请选择一个 WSL 发行版。", true); return; }
         SetNotice("正在读取 " + selectedDistro + " 中的应用…");
         try { await App.Current.Discover(selectedDistro); Render(); SetNotice("应用列表已更新。你的显示选择和启动配置已保留。"); }
         catch (Exception ex) { SetNotice(ex.Message, true); Config.Log(ex.ToString()); }
-    }
-    public void ShowDisplayPage() { scalePage = true; Render(); }
-    private void RenderScale()
-    {
-        Label("外观");
-        var themeRow = new DockPanel();
-        var choice = new ComboBox { Width = 168, ItemsSource = new[] { "跟随系统", "浅色", "深色" }, VerticalAlignment = VerticalAlignment.Center };
-        var modes = new[] { "system", "light", "dark" }; choice.SelectedIndex = Math.Max(0, Array.IndexOf(modes, App.Current.Prefs.ThemeMode));
-        System.Windows.Automation.AutomationProperties.SetName(choice, "夜间模式");
-        choice.SelectionChanged += (_, _) =>
-        {
-            if (choice.SelectedIndex < 0) return;
-            App.Current.Prefs.ThemeMode = modes[choice.SelectedIndex]; Theme.Apply(App.Current.Prefs.ThemeMode);
-            Save(); SetNotice("外观已保存，Dock、菜单和设置同步生效。");
-        };
-        DockPanel.SetDock(choice, Dock.Right); themeRow.Children.Add(choice);
-        var themeText = new StackPanel { Margin = new Thickness(0, 0, 18, 0) };
-        themeText.Children.Add(Ui.Text("夜间模式"));
-        var caption = Ui.Text("选择 WslDock 的浅色或深色外观", 12, "#777777"); caption.Margin = new Thickness(0, 5, 0, 0); themeText.Children.Add(caption);
-        themeRow.Children.Add(themeText); body.Children.Add(Ui.Card(themeRow));
-        Label("显示与缩放");
-        var monitor = new StackPanel(); displayTitle = Ui.Text("", 14); monitor.Children.Add(displayTitle);
-        displayScale = Ui.Text("", 12, "#666666"); displayScale.Margin = new Thickness(0, 5, 0, 0); monitor.Children.Add(displayScale); body.Children.Add(Ui.Card(monitor));
-        UpdateDisplayInfo();
-        Label("按应用调整");
-        foreach (var app in App.Current.Prefs.Apps.Where(a => a.Visible))
-        {
-            var row = AppRow(app, out var info);
-            info.Text = app.CanScale ? (app.ScaleProfile == "alacritty" ? "Alacritty · 原生 X11 渲染" : "Chromium / Electron · 原生界面缩放") : "尚未适配 · 保留应用自身的缩放";
-            info.TextWrapping = TextWrapping.Wrap;
-            var values = new[] { 0, 100, 125, 150, 175, 200, 250, 300 };
-            var select = new ComboBox { Width = 168, IsEnabled = app.CanScale, VerticalAlignment = VerticalAlignment.Center };
-            foreach (var value in values) select.Items.Add(value == 0 ? "跟随 Dock 显示器" : value + "%");
-            select.SelectedIndex = Array.IndexOf(values, app.ScalePercent); if (select.SelectedIndex < 0) select.SelectedIndex = 0;
-            select.SelectionChanged += (_, _) => { app.ScalePercent = values[select.SelectedIndex]; Save(); SetNotice(app.Name + " 的缩放已保存，下次完整启动时生效。现有窗口不会被关闭。"); };
-            System.Windows.Automation.AutomationProperties.SetName(select, app.Name + " 缩放");
-            Grid.SetColumn(select, 2); row.Children.Add(select); body.Children.Add(Ui.Card(row));
-        }
-        Note("缩放只作用于从 WslDock 新启动的应用，不修改 Ubuntu 或 WSLg 的全局缩放。选择“跟随”时，读取启动瞬间 Dock 所在显示器的比例。");
-        Note("已运行的 Chrome / Codex 可能复用原进程。请先在应用中保存工作并完整退出，再从 Dock 打开以应用新的比例。跨屏移动后不会强制重启应用。");
-        Label("WSLg 显示状态");
-        var healthPanel = new StackPanel();
-        var summary = Ui.Text("正在检查显示状态…", 13); summary.TextWrapping = TextWrapping.Wrap;
-        var detail = Ui.Text("", 12, "#777777"); detail.TextWrapping = TextWrapping.Wrap; detail.LineHeight = 20; detail.Margin = new Thickness(0, 8, 0, 10);
-        var retry = Ui.Button("重新检查", () => { }); retry.HorizontalAlignment = HorizontalAlignment.Left;
-        retry.Click += async (_, _) => await CheckDisplay(summary, detail, retry);
-        healthPanel.Children.Add(summary); healthPanel.Children.Add(detail); healthPanel.Children.Add(retry); body.Children.Add(Ui.Card(healthPanel));
-        _ = CheckDisplay(summary, detail, retry);
-    }
-    private async Task CheckDisplay(TextBlock summary, TextBlock detail, Button retry)
-    {
-        retry.IsEnabled = false; summary.Text = "正在检查 WSLg…";
-        try
-        {
-            var active = await App.Current.Wsl.DistrosAsync(true);
-            var names = App.Current.Prefs.Apps.Where(a => a.Visible).Select(a => a.Distro).Distinct().Where(active.Contains).ToArray();
-            if (names.Length == 0) { summary.Text = "WSL 尚未运行"; detail.Text = "打开应用后可检查显示状态。"; return; }
-            var states = new List<string>(); bool broken = false;
-            foreach (var distro in names)
-            {
-                var health = await App.Current.Wsl.DisplayHealthAsync(distro, background: true);
-                states.Add(distro + " · " + health.Message); broken |= health.Broken;
-            }
-            summary.Text = string.Join("\n", states); summary.Foreground = Ui.Brush(broken ? "#B3261E" : "#242424");
-            detail.Text = broken ? DisplayHealth.Recovery : "此检查识别已知日志故障。窗口是否可见、能否响应操作仍需实际确认。";
-        }
-        catch (Exception ex) { summary.Text = "显示检查未完成"; detail.Text = ex.Message; }
-        finally { retry.IsEnabled = true; }
-    }
-    private void UpdateDisplayInfo()
-    {
-        if (displayTitle == null || displayScale == null) return;
-        var hwnd = new WindowInteropHelper(this).Handle;
-        var screen = System.Windows.Forms.Screen.FromHandle(hwnd); var dpi = Native.GetDpiForWindow(hwnd);
-        displayTitle.Text = $"当前显示器 · {screen.Bounds.Width} × {screen.Bounds.Height}";
-        displayScale.Text = $"Windows 缩放 {Math.Round(dpi / 96.0 * 100)}% · WslDock 随显示器自动适配";
     }
     private static Grid AppRow(DockApp app, out TextBlock details)
     {

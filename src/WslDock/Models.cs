@@ -15,21 +15,21 @@ public sealed class DockApp
     public string WorkingDirectory { get; set; } = "";
     public string IconName { get; set; } = "";
     public string IconPng { get; set; } = "";
+    public string IconSource { get; set; } = "";
     public string WmClass { get; set; } = "";
-    public string ScaleProfile { get; set; } = "none";
-    public int ScalePercent { get; set; } = 0;
     public bool Visible { get; set; }
     public string BoundAppId { get; set; } = "";
-    [JsonIgnore] public bool CanScale => ScaleProfile is "chromium" or "alacritty";
+    [JsonIgnore] public bool IsTerminal => string.Equals(SourceName, "Alacritty", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(DesktopId, "Alacritty.desktop", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class Preferences
 {
     public int Version { get; set; } = 1;
-    public string ThemeMode { get; set; } = "system";
     public double? Left { get; set; }
     public double? Top { get; set; }
     public List<DockApp> Apps { get; set; } = new();
+    public Dictionary<string, string> KeyringPasswords { get; set; } = new();
 }
 
 public static class Config
@@ -45,8 +45,7 @@ public static class Config
         {
             var config = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(FilePath), Json) ?? throw new JsonException("设置为空");
             if (config.Version != 1 || config.Apps == null || config.Apps.Any(a => a == null)) throw new JsonException("设置版本或应用列表无效");
-            foreach (var a in config.Apps) if (a.ScalePercent != 0 && (a.ScalePercent < 100 || a.ScalePercent > 300)) a.ScalePercent = 0;
-            if (config.ThemeMode is not ("system" or "light" or "dark")) config.ThemeMode = "system";
+            config.KeyringPasswords ??= new();
             return config;
         }
         catch (Exception ex) when (ex is IOException or JsonException)

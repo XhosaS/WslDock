@@ -11,6 +11,8 @@
 - `Native.cs`：通过 WSLg `RAIL_WINDOW` 的公开属性读取身份。缺失图标时，`WslgCompatibility.cs` 使用 `WslgServerWindowId` 与当前会话日志的 provider/window ID 精确映射，按 desktop ID 唯一匹配后补窗口图标；退出时恢复。控制 HWND 前重新校验进程、应用和发行版，禁止通过任意标题模糊匹配操控窗口。
 - `Backend/WslService.cs` / `wsl_bridge.py`：通过 stdin/stdout JSON 调用嵌入的 Python 桥，负责发现、启动、状态和日志。
 - `SettingsWindow.cs` / `Theme.cs` / `AppMenus.cs`：设置、动态主题与菜单。
+- `KeyringPassword.cs`：按发行版使用当前用户 DPAPI 加密密码。明文只经 stdin JSON 传入桥，禁止放入参数、日志或异常文本；解锁默认集合，不能仅解锁 login 集合。
+- 图标仅取 Linux PNG/SVG 和 GTK 图标主题，不使用带 WSL 角标的 Windows ICO；旧缓存只在发行版运行后迁移。
 - `StartupRegistration.cs`：仅修改当前用户 Run 键下的 WslDock 值；默认不启用自启。
 - `assets/branding/icon-spec.json`：当前图标几何源。`src/WslDock/Assets` 是编译所需图标，必须提交。
 - `installer/WslDock.iss` / `scripts/package.ps1`：当前用户安装程序和自包含 ZIP。
@@ -45,6 +47,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File ./scripts/export-ic
 python -m unittest discover -s tests -v
 dotnet run --project tests/SingleInstance/SingleInstance.Tests.csproj -c Release
 dotnet run --project tests/WslRequests/WslRequests.Tests.csproj -c Release
+dotnet run --project tests/KeyringPasswords/KeyringPasswords.Tests.csproj -c Release
 ```
 
 单实例测试使用随机命名空间和真实子进程，覆盖启动期间激活、多次转发、正常释放和异常退出恢复，不影响运行中的应用。GUI 变更还需实际检查重复启动、最小化恢复、设置窗口复用及深浅主题，并用 Computer Use 更新 `docs/screenshots`。
@@ -56,12 +59,12 @@ dotnet run --project tests/WslRequests/WslRequests.Tests.csproj -c Release
 ./artifacts/WslDock/WslDock.exe --smoke-test ./artifacts/verification
 ```
 
-诊断和显式 smoke-test 不受普通 GUI 单实例限制。Smoke-test 会显示测试界面、创建唯一标题的 Alacritty 终端，验证桌面挂载、主题、应用身份、窗口恢复与清理；只关闭自己创建的测试窗口。它还使用隔离注册表键验证自启动，不能替代注销登录测试。不要把完整桌面集成测试放入缺少 WSLg 的 CI。
+诊断和显式 smoke-test 不受普通 GUI 单实例限制。设置 `WSLDOCK_CAPTURE_UI=1` 可在配置应用页暂停 60 秒，供 Computer Use 截图。Smoke-test 会显示测试界面、创建唯一标题的 Alacritty 终端，验证桌面挂载、主题、应用身份、窗口恢复与清理；只关闭自己创建的测试窗口。它还使用隔离注册表键验证自启动，不能替代注销登录测试。不要把完整桌面集成测试放入缺少 WSLg 的 CI。
 
 ## 实现边界
 
 - 启动命令按参数解析，不通过 shell 拼接执行；保留已有包装器和输入法配置。
-- 缩放仅作用于新进程，不写 `.wslgconfig`、Xresources、xrandr 或全局环境。不得自动终止用户应用或执行 `wsl --shutdown`；托盘“关闭 WSL”仅在用户点击并确认后执行，暂停后台桥请求以避免重新唤醒。
+- 应用启动参数和环境由已有命令、包装器和 WSLg 处理，WslDock 不注入缩放参数或强制显示后端。不写 `.wslgconfig`、Xresources、xrandr 或全局环境。不得自动终止用户应用或执行 `wsl --shutdown`；托盘“关闭 WSL”仅在用户点击并确认后执行，暂停后台桥请求以避免重新唤醒。
 - 状态灯只查询运行发行版，查询失败显示未知状态；不为轮询唤醒停止的发行版。
 - 普通应用图标没有右键关闭/预览菜单。窗口关闭桥仅供显式集成测试清理使用。
 - 退出 WslDock 不关闭 WSL 应用；设置关闭后保持托盘和 Dock。

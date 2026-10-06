@@ -42,10 +42,12 @@ public partial class App : System.Windows.Application
             args.Handled = true;
         };
         Prefs = Config.Load();
-        var iconsUpdated = false;
-        foreach (var app in Prefs.Apps) iconsUpdated |= WslService.TryFillCachedIcon(app);
-        if (iconsUpdated) Config.Save(Prefs);
-        Theme.Apply(Prefs.ThemeMode);
+        foreach (var app in Prefs.Apps.Where(a => a.IconSource != "linux"))
+        {
+            // Legacy icons may contain Windows' WSL badge. Never reuse that cache.
+            app.IconPng = "";
+        }
+        Config.Save(Prefs);
         SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         SystemEvents.DisplaySettingsChanged += SystemDisplayChanged;
         Dock = new DockWindow();
@@ -87,12 +89,12 @@ public partial class App : System.Windows.Application
         foreach (var app in found)
         {
             var existing = Prefs.Apps.FirstOrDefault(a => a.Distro == distro && a.DesktopId == app.DesktopId);
-            if (existing != null) { existing.IconPng = app.IconPng; continue; }
-            app.Visible = app.Name == "Codex" || app.Name.Contains("Chrome", StringComparison.OrdinalIgnoreCase) || app.ScaleProfile == "alacritty";
-            if (app.ScaleProfile == "alacritty") app.Name = "终端";
+            if (existing != null) { existing.IconPng = app.IconPng; existing.IconSource = "linux"; existing.IconName = app.IconName; continue; }
+            app.Visible = app.Name == "Codex" || app.Name.Contains("Chrome", StringComparison.OrdinalIgnoreCase) || app.IsTerminal;
+            if (app.IsTerminal) app.Name = "终端";
             Prefs.Apps.Add(app);
         }
-        Prefs.Apps = Prefs.Apps.OrderBy(a => a.Name == "Codex" ? 0 : a.Name.Contains("Chrome") ? 1 : a.ScaleProfile == "alacritty" ? 2 : 3).ToList();
+        Prefs.Apps = Prefs.Apps.OrderBy(a => a.Name == "Codex" ? 0 : a.Name.Contains("Chrome") ? 1 : a.IsTerminal ? 2 : 3).ToList();
         Save();
     }
     public void Save() { Config.Save(Prefs); Dock?.RenderApps(); }
@@ -103,7 +105,7 @@ public partial class App : System.Windows.Application
     }
     private void SystemThemeChanged(object sender, UserPreferenceChangedEventArgs e)
     {
-        Dispatcher.BeginInvoke(() => { if (Prefs.ThemeMode == "system") Theme.Apply("system"); UpdateTrayIcon(); });
+        Dispatcher.BeginInvoke(() => { Theme.Apply("system"); UpdateTrayIcon(); });
     }
     private void SystemDisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(UpdateTrayIcon);
     private void UpdateTrayIcon()
@@ -131,7 +133,6 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex) { Config.Log(ex.ToString()); Dock.ShowStatus("关闭 WSL 失败"); MessageBox.Show(ex.Message, "关闭 WSL 失败", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
-    public void OpenDisplaySettings() { OpenSettings(); settings!.ShowDisplayPage(); }
     protected override void OnExit(ExitEventArgs e)
     {
         SystemEvents.UserPreferenceChanged -= SystemThemeChanged;

@@ -12,12 +12,9 @@ public static class Diagnostics
             var wsl = new WslService();
             var distros = await wsl.DistrosAsync();
             report["distros"] = distros;
-            var health = new Dictionary<string, DisplayHealth>();
-            foreach (var distro in distros) health[distro] = await wsl.DisplayHealthAsync(distro);
-            report["displayHealth"] = health;
             var discovered = new List<DockApp>();
             foreach (var distro in distros) discovered.AddRange(await wsl.DiscoverAsync(distro));
-            report["apps"] = discovered.Select(a => new { a.Name, a.Distro, a.DesktopId, a.Command, a.ScaleProfile, iconPngBytes = a.IconPng.Length });
+            report["apps"] = discovered.Select(a => new { a.Name, a.Distro, a.DesktopId, a.Command, iconPngBytes = a.IconPng.Length });
             foreach (var distro in distros)
             {
                 var status = await wsl.RequestAsync(distro, new { action = "status", ids = Array.Empty<string>() });

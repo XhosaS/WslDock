@@ -62,20 +62,15 @@ public static partial class Native
                 try
                 {
                     var app = matches[0];
-                    // Reuse the real icon WSLg registered under the shortened desktop ID.
-                    var shortId = Path.GetFileNameWithoutExtension(app.DesktopId).Split('.').Last();
-                    var iconFile = Path.Combine(Path.GetTempPath(), "WSLDVCPlugin", app.Distro, shortId + ".ico");
+                    if (app.IconPng.Length == 0 || app.IconSource != "linux") continue;
                     System.Drawing.Icon icon;
-                    if (File.Exists(iconFile)) icon = new System.Drawing.Icon(iconFile, 32, 32);
-                    else if (app.IconPng.Length > 0)
+                    using (var bytes = new MemoryStream(Convert.FromBase64String(app.IconPng)))
+                    using (var bitmap = new System.Drawing.Bitmap(bytes))
                     {
-                        using var bytes = new MemoryStream(Convert.FromBase64String(app.IconPng));
-                        using var bitmap = new System.Drawing.Bitmap(bytes);
                         var handle = bitmap.GetHicon();
                         try { using var borrowed = System.Drawing.Icon.FromHandle(handle); icon = (System.Drawing.Icon)borrowed.Clone(); }
                         finally { DestroyIcon(handle); }
                     }
-                    else continue;
                     repair = new(window, icon, WindowIcon(window.Handle, 1), WindowIcon(window.Handle, 0));
                     repairedIcons[window.Handle] = repair;
                 }

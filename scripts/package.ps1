@@ -11,7 +11,7 @@ $output = Join-Path $root 'artifacts\release'
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'README.md'), (Join-Path $root 'CHANGELOG.md') -Destination $publish -Force
 New-Item -ItemType Directory -Path "$publish/docs/screenshots", "$publish/src/WslDock/Assets" -Force | Out-Null
-Copy-Item "$root/docs/screenshots/*.png" "$publish/docs/screenshots"
+Get-ChildItem -LiteralPath "$root/docs/screenshots" -File | Where-Object { $_.Extension -in @(".png", ".jpg", ".jpeg") } | Copy-Item -Destination "$publish/docs/screenshots"
 Copy-Item "$root/src/WslDock/Assets/WslDock.png" "$publish/src/WslDock/Assets"
 Copy-Item "$root/AGENTS.md" $publish
 $zip = Join-Path $output "WslDock-$version-win-x64.zip"

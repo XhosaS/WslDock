@@ -25,7 +25,7 @@ public static class Ui
             }
             catch (Exception ex) { Config.Log("Icon: " + ex.Message); }
         }
-        var terminal = app.ScaleProfile == "alacritty";
+        var terminal = app.IsTerminal;
         var fallback = terminal ? Ui.Text(">_", size * .52, "#FFFFFF") : Ui.Glyph(app.Name == "Codex" ? "\uE943" : "\uE8A5", size * .62);
         if (terminal) fallback.Foreground = Brushes.White;
         if (terminal) fallback.Foreground = Brushes.White;

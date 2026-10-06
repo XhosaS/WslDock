@@ -21,7 +21,7 @@ public sealed class DockWindow : Window
     private bool attachmentWarning;
     public bool DesktopAttached => desktop.Attached;
     public bool HasCompositedSurface => desktop.HasCompositedSurface;
-    public double MonitorScale => Native.GetDpiForWindow(new WindowInteropHelper(this).Handle) / 96.0;
+    private double DockScale => Native.GetDpiForWindow(new WindowInteropHelper(this).Handle) / 96.0;
 
     public DockWindow()
     {
@@ -82,14 +82,14 @@ public sealed class DockWindow : Window
     {
         // Work areas from Forms are physical pixels; convert using this window's current DPI.
         var screen = System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
-        var scale = Math.Max(1, MonitorScale); var area = screen.WorkingArea;
+        var scale = Math.Max(1, DockScale); var area = screen.WorkingArea;
         Left = Math.Clamp(Left, area.Left / scale, Math.Max(area.Left / scale, area.Right / scale - ActualWidth));
         Top = Math.Clamp(Top, area.Top / scale, Math.Max(area.Top / scale, area.Bottom / scale - ActualHeight));
     }
     private void SavePosition()
     {
         Native.GetWindowRect(new WindowInteropHelper(this).Handle, out var rect);
-        var scale = Math.Max(1, MonitorScale);
+        var scale = Math.Max(1, DockScale);
         App.Current.Prefs.Left = rect.Left / scale; App.Current.Prefs.Top = rect.Top / scale; Config.Save(App.Current.Prefs);
     }
     public void RenderApps()
@@ -152,6 +152,7 @@ public sealed class DockWindow : Window
             {
                 var value = await App.Current.Wsl.RequestAsync(group.Key, new { action = "status", ids = group.Select(a => a.Id).ToArray() }, background: true);
                 Native.UpdateWslgIdentities(group.Key, value.GetProperty("windowApps"));
+                if (await App.Current.Wsl.RefreshIconsAsync(group.Key, group)) App.Current.Save();
                 foreach (var item in value.GetProperty("running").EnumerateArray()) next.Add(item.GetString()!);
             }
             running.Clear(); running.UnionWith(next);
@@ -163,17 +164,6 @@ public sealed class DockWindow : Window
     {
         if (App.Current.Wsl.IsShuttingDown) { ShowStatus("正在关闭 WSL，请稍后重试。"); return; }
         AppMenus.Close(); RefreshWindows();
-        try
-        {
-            var health = await App.Current.Wsl.DisplayHealthAsync(app.Distro);
-            if (health.Broken)
-            {
-                ShowStatus("WSLg 显示故障，已打开显示设置。");
-                App.Current.OpenDisplaySettings(); return;
-            }
-        }
-        catch (Exception ex) { Config.Log("Display health: " + ex.Message); }
-        if (App.Current.Wsl.IsShuttingDown || App.Current.Wsl.BackgroundPaused) return;
         var targets = ForApp(app);
         if (targets.Count > 0) { if (!Native.Restore(targets[0])) ShowStatus("Windows 暂未允许切换焦点，请再点击一次。"); return; }
         if (launching.TryGetValue(app.Id, out var started) && (DateTime.UtcNow - started).TotalSeconds < 20) { ShowStatus(app.Name + " 正在启动…"); return; }
@@ -181,11 +171,9 @@ public sealed class DockWindow : Window
         try
         {
             ShowStatus("正在打开 " + app.Name + "…");
-            await App.Current.Wsl.LaunchAsync(app, MonitorScale);
+            await App.Current.Wsl.LaunchAsync(app);
             // A successful launcher exit isn't proof of a visible GUI. Allow WSLg time to register it.
             await Task.Delay(1500); RefreshWindows();
-            var health = await App.Current.Wsl.DisplayHealthAsync(app.Distro, background: true);
-            if (health.Broken) { launching.Remove(app.Id); App.Current.OpenDisplaySettings(); return; }
             if (ForApp(app).Count == 0) ShowStatus("启动请求已发送；若窗口未出现，请查看设置中的应用日志。");
         }
         catch (Exception ex) { launching.Remove(app.Id); ShowStatus(app.Name + " 启动失败"); MessageBox.Show(ex.Message, "WslDock · 启动失败", MessageBoxButton.OK, MessageBoxImage.Warning); Config.Log(ex.ToString()); }
