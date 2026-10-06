@@ -80,16 +80,56 @@ public sealed class SettingsWindow : Window
             var expand = Ui.Button("", () => { edit.Visibility = edit.Visibility == Visibility.Collapsed ? Visibility.Visible : Visibility.Collapsed; }, true);
             expand.Content = Ui.Glyph("\uE70D", 11); expand.Width = 26; expand.Height = 30; expand.Margin = new Thickness(12, 0, 0, 0); expand.ToolTip = "启动配置";
             rowActions.Children.Add(expand); Grid.SetColumn(rowActions, 2); row.Children.Add(rowActions); stack.Children.Add(row);
-            var name = Field(edit, "显示名称", app.Name); var command = Field(edit, "启动命令", app.Command);
-            var source = Ui.Text(app.Distro + " · " + app.DesktopId, 11, "#888888"); source.TextWrapping = TextWrapping.Wrap; source.Margin = new Thickness(0, 0, 0, 10); edit.Children.Add(source);
-            var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(Ui.Button("保存", () =>
+            var name = Field(edit, "显示名称", app.Name);
+            var commandCaption = Ui.Text("自定义启动命令", 12, "#666666");
+            commandCaption.Margin = new Thickness(0, 0, 0, 5); edit.Children.Add(commandCaption);
+            var commandRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+            commandRow.ColumnDefinitions.Add(new ColumnDefinition());
+            commandRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var command = new TextBox { Text = app.Command };
+            System.Windows.Automation.AutomationProperties.SetName(command, "自定义启动命令 " + app.Name);
+            commandRow.Children.Add(command);
+            var custom = new CheckBox { Style = (Style)App.Current.FindResource("Toggle"), IsChecked = app.CustomConfiguration,
+                Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "自定义启动命令：开启后，重新发现应用会保留此应用的配置" };
+            System.Windows.Automation.AutomationProperties.SetName(custom, "自定义启动命令开关 " + app.Name);
+            Grid.SetColumn(custom, 1); commandRow.Children.Add(custom); edit.Children.Add(commandRow);
+            var actions = new DockPanel { LastChildFill = false };
+            var log = Ui.Button("查看启动日志", () => _ = ReadLog(app), true);
+            DockPanel.SetDock(log, Dock.Right); actions.Children.Add(log); edit.Children.Add(actions);
+            void UpdateEditing()
             {
-                if (string.IsNullOrWhiteSpace(name.Text) || string.IsNullOrWhiteSpace(command.Text)) { SetNotice("名称与启动命令不能为空。", true); return; }
-                if (app.Command != command.Text.Trim()) app.BoundAppId = "";
-                app.Name = name.Text.Trim(); app.Command = command.Text.Trim(); Save(); Render();
-            }));
-            var log = Ui.Button("查看启动日志", () => _ = ReadLog(app), true); log.Margin = new Thickness(8, 0, 0, 0); actions.Children.Add(log); edit.Children.Add(actions);
+                command.IsReadOnly = !app.CustomConfiguration;
+                command.Opacity = app.CustomConfiguration ? 1 : 0.65;
+            }
+            void SaveName()
+            {
+                if (string.IsNullOrWhiteSpace(name.Text))
+                { SetNotice("显示名称不能为空，当前更改尚未保存。", true); return; }
+                if (app.Name == name.Text.Trim()) return;
+                app.Name = name.Text.Trim(); app.CustomName = true;
+                var labels = (StackPanel)row.Children[1]; ((TextBlock)labels.Children[0]).Text = app.Name;
+                System.Windows.Automation.AutomationProperties.SetName(custom, "自定义启动命令开关 " + app.Name);
+                System.Windows.Automation.AutomationProperties.SetName(command, "自定义启动命令 " + app.Name);
+                System.Windows.Automation.AutomationProperties.SetName(toggle, "在 Dock 中显示 " + app.Name);
+                Save();
+            }
+            void SaveCommand()
+            {
+                if (!app.CustomConfiguration) return;
+                if (string.IsNullOrWhiteSpace(command.Text))
+                { SetNotice("启动命令不能为空，当前更改尚未保存。", true); return; }
+                if (app.Command == command.Text.Trim()) return;
+                app.Command = command.Text.Trim(); app.BoundAppId = ""; Save();
+            }
+            custom.Checked += (_, _) => { app.CustomConfiguration = true; UpdateEditing(); Save(); };
+            custom.Unchecked += (_, _) =>
+            {
+                app.CustomConfiguration = false; command.Text = app.Command;
+                UpdateEditing(); Save();
+            };
+            name.TextChanged += (_, _) => SaveName(); command.TextChanged += (_, _) => SaveCommand();
+            UpdateEditing();
             stack.Children.Add(edit); body.Children.Add(Ui.Card(stack));
         }
         if (App.Current.Prefs.Apps.Count == 0) body.Children.Add(Ui.Card(Ui.Text("选择 Ubuntu，然后点击“重新发现应用”。", 13, "#666666")));
@@ -194,7 +234,7 @@ public sealed class SettingsWindow : Window
     {
         if (selectedDistro.Length == 0) { SetNotice("请选择一个 WSL 发行版。", true); return; }
         SetNotice("正在读取 " + selectedDistro + " 中的应用…");
-        try { await App.Current.Discover(selectedDistro); Render(); SetNotice("应用列表已更新。你的显示选择和启动配置已保留。"); }
+        try { await App.Current.Discover(selectedDistro); Render(); SetNotice("应用列表已更新。已同步桌面启动器，并保留自定义配置和显示选择。"); }
         catch (Exception ex) { SetNotice(ex.Message, true); Config.Log(ex.ToString()); }
     }
     private static Grid AppRow(DockApp app, out TextBlock details)

@@ -129,6 +129,19 @@ public static class SmokeTest
             checks["displayControlsRemoved"] = !Descendants<ComboBox>(settings).Any(c => System.Windows.Automation.AutomationProperties.GetName(c) == "夜间模式" || System.Windows.Automation.AutomationProperties.GetName(c).EndsWith(" 缩放"));
             var appsNav = Descendants<Button>(settings).First(b => Descendants<TextBlock>(b).Any(t => t.Text == "配置应用"));
             appsNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
+            var chromeCard = Descendants<StackPanel>(settings).First(panel => panel.Children.OfType<Grid>()
+                .Any(row => Descendants<TextBlock>(row).Any(text => text.Text == "Google Chrome")));
+            Descendants<Button>(chromeCard).First(button => button.ToolTip as string == "启动配置")
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(100);
+            var chromeFields = Descendants<TextBox>(chromeCard).ToArray();
+            checks["displayNameAlwaysEditable"] = chromeFields.Length == 2 && !chromeFields[0].IsReadOnly;
+            checks["desktopCommandReadOnlyByDefault"] = chromeFields.Length == 2 && chromeFields[1].IsReadOnly;
+            checks["customCommandSwitchPresent"] = Descendants<CheckBox>(chromeCard).Any(toggle =>
+                System.Windows.Automation.AutomationProperties.GetName(toggle) == "自定义启动命令开关 Google Chrome");
+            checks["customCommandCaption"] = Descendants<TextBlock>(chromeCard).Any(text => text.Text == "自定义启动命令");
+            checks["redundantLaunchDetailsRemoved"] = !Descendants<TextBlock>(chromeCard)
+                .Any(text => text.Text == "自定义" || text.Text.Contains(" · google-chrome.desktop") || text.Text.Contains("重新发现时"));
             if (Environment.GetEnvironmentVariable("WSLDOCK_CAPTURE_UI") == "1") await Task.Delay(60000);
             checks["desktopAttached"] = App.Current.Dock.DesktopAttached;
             checks["desktopHasLayeredSurface"] = App.Current.Dock.HasCompositedSurface;

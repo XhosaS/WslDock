@@ -9,7 +9,7 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 
 ## 下载与安装
 
-本地更新版本：**v0.3.6**。安装包位于 `artifacts/release/WslDock-Setup-v0.3.6.exe`，免安装包位于 `artifacts/release/WslDock-0.3.6-win-x64.zip`。GitHub 下载入口以已发布版本为准。
+最新版本：**v0.3.7**。从 [GitHub Release](https://github.com/XhosaS/WslDock/releases/tag/v0.3.7) 下载 `WslDock-Setup-v0.3.7.exe` 安装包或 `WslDock-0.3.7-win-x64.zip` 免安装包。
 
 安装器安装到当前用户目录，创建开始菜单入口，可选桌面快捷方式，无需管理员权限。免安装版需解压整个文件夹，不能只移动 EXE。两个包均包含 .NET 运行时，无需另装 .NET。
 
@@ -21,7 +21,7 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 
 配置应用：选择发行版、发现应用、控制图标显示和登录自启。
 
-![WslDock 配置应用](docs/screenshots/apps-v0.3.6.jpg)
+![WslDock 配置应用](docs/screenshots/apps-v0.3.7.png)
 
 密钥环密码：按发行版保存、清除和测试密码。
 
@@ -30,7 +30,7 @@ WslDock 是面向 **Windows 11 x64 + WSLg** 的桌面应用启动器。点击图
 ## 使用方法
 
 1. 启动 WslDock。首次运行会发现首个 WSL 发行版的应用，默认显示识别到的 Codex、Chrome 和 Alacritty。
-2. 点击 Dock 齿轮进入“配置应用”，选择发行版并点击“重新发现应用”，开启希望显示的应用。
+2. 点击 Dock 齿轮进入“配置应用”，选择发行版并点击“重新发现应用”，开启希望显示的应用。重新发现会同步桌面启动器的最新配置，保留 Dock 显示选择。显示名称始终可编辑并自动保存，重新发现不会覆盖手动修改的名称。展开应用的“启动配置”，打开“自定义启动命令”右侧的开关后可编辑命令，更改自动保存；重新发现会跳过该应用。关闭开关后，下次重新发现恢复同步。
 3. 左键点击应用图标启动应用；已有窗口时恢复并尝试聚焦。图标下方圆点表示存在窗口或由 WslDock 启动的进程。
 4. 拖动左侧短竖条调整 Dock 位置；竖条上方的小点表示是否有 WSL 发行版正在运行。
 5. 如需自动解锁，进入“密钥环密码”，选择发行版，填写 Linux 的 Unlock Keyring 窗口所需密码并保存。

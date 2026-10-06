@@ -17,7 +17,25 @@ public sealed class DockApp
     public string IconPng { get; set; } = "";
     public string IconSource { get; set; } = "";
     public string WmClass { get; set; } = "";
+    public bool CustomName { get; set; }
+    public bool CustomConfiguration { get; set; }
     public bool Visible { get; set; }
+
+    public void UpdateFromDesktop(DockApp discovered)
+    {
+        if (CustomConfiguration) return;
+        if (Command != discovered.Command || WmClass != discovered.WmClass || DesktopPath != discovered.DesktopPath)
+            BoundAppId = "";
+        DesktopPath = discovered.DesktopPath;
+        SourceName = discovered.SourceName;
+        if (!CustomName) Name = discovered.IsTerminal ? "终端" : discovered.Name;
+        Command = discovered.Command;
+        WorkingDirectory = discovered.WorkingDirectory;
+        WmClass = discovered.WmClass;
+        IconName = discovered.IconName;
+        IconPng = discovered.IconPng;
+        IconSource = "linux";
+    }
     public string BoundAppId { get; set; } = "";
     [JsonIgnore] public bool IsTerminal => string.Equals(SourceName, "Alacritty", StringComparison.OrdinalIgnoreCase)
         || string.Equals(DesktopId, "Alacritty.desktop", StringComparison.OrdinalIgnoreCase);

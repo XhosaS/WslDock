@@ -89,7 +89,7 @@ public partial class App : System.Windows.Application
         foreach (var app in found)
         {
             var existing = Prefs.Apps.FirstOrDefault(a => a.Distro == distro && a.DesktopId == app.DesktopId);
-            if (existing != null) { existing.IconPng = app.IconPng; existing.IconSource = "linux"; existing.IconName = app.IconName; continue; }
+            if (existing != null) { existing.UpdateFromDesktop(app); continue; }
             app.Visible = app.Name == "Codex" || app.Name.Contains("Chrome", StringComparison.OrdinalIgnoreCase) || app.IsTerminal;
             if (app.IsTerminal) app.Name = "终端";
             Prefs.Apps.Add(app);

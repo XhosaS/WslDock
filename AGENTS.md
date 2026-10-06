@@ -46,6 +46,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File ./scripts/export-ic
 ```powershell
 python -m unittest discover -s tests -v
 dotnet run --project tests/SingleInstance/SingleInstance.Tests.csproj -c Release
+dotnet run --project tests/DesktopSync/DesktopSync.Tests.csproj -c Release
 dotnet run --project tests/WslRequests/WslRequests.Tests.csproj -c Release
 dotnet run --project tests/KeyringPasswords/KeyringPasswords.Tests.csproj -c Release
 ```
@@ -64,6 +65,7 @@ dotnet run --project tests/KeyringPasswords/KeyringPasswords.Tests.csproj -c Rel
 ## 实现边界
 
 - 启动命令按参数解析，不通过 shell 拼接执行；保留已有包装器和输入法配置。
+- 重新发现应用时同步桌面入口的名称、命令、路径、工作目录、窗口标识与图标，保留应用 ID 和显示选择；开启 `CustomConfiguration` 的应用整体跳过同步。名称独立编辑并自动保存，`CustomName` 保留手动名称，不受启动命令开关控制；自定义命令有效时自动保存。
 - 应用启动参数和环境由已有命令、包装器和 WSLg 处理，WslDock 不注入缩放参数或强制显示后端。不写 `.wslgconfig`、Xresources、xrandr 或全局环境。不得自动终止用户应用或执行 `wsl --shutdown`；托盘“关闭 WSL”仅在用户点击并确认后执行，暂停后台桥请求以避免重新唤醒。
 - 状态灯只查询运行发行版，查询失败显示未知状态；不为轮询唤醒停止的发行版。
 - 普通应用图标没有右键关闭/预览菜单。窗口关闭桥仅供显式集成测试清理使用。
